@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const fetch = require('node-fetch');
 const app = express();
 
 app.use(cors({
@@ -58,11 +59,16 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Root path for health checks
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', zenith: 'awake', endpoint: '/api/chat' });
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', zenith: 'awake' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('ZENITH brain online on port ' + PORT);
+  console.log(`ZENITH brain running on port ${PORT}`);
 });
