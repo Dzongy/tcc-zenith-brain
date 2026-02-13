@@ -2,21 +2,42 @@ name: ZENITH Autonomous Cron
 
 on:
   schedule:
-    # Every 12 hours
-    - cron: '0 */12 * * *'
+    # Every 6 hours for faster verification
+    - cron: '0 */6 * * *'
   workflow_dispatch:
     # Manual trigger for testing
 
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
+      - name: Wake up Render service
+        run: |
+          echo "Pinging ZENITH to wake from cold start..."
+          curl -s --max-time 120 https://tcc-zenith-brain.onrender.com/api/system || echo "Wake ping sent"
+          echo "Waiting 10s for service to fully start..."
+          sleep 10
+
       - name: Fire autonomous tick
         run: |
-          curl -s -X POST \
+          echo "Firing autonomous tick..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             https://tcc-zenith-brain.onrender.com/api/autonomous/tick \
             -H "Content-Type: application/json" \
             -H "X-Auth: amos-bridge-2026" \
             -d '{}' \
-            --max-time 30
+            --max-time 120)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✓ Tick successful"
+          else
+            echo "✗ Tick failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
