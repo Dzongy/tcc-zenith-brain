@@ -97,12 +97,6 @@ function requireSoul(req, res, next) {
     timestamp: new Date().toISOString()
   });
 }
-  return res.status(403).json({
-    error: 'SOUL_CHECK_REQUIRED',
-    message: 'Sovereign identity not verified. POST /api/soul with { "phrase": "..." } first.',
-    timestamp: new Date().toISOString()
-  });
-}
 
 // ============================================
 // ZENITH MEMORY SYSTEM ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Persistent Context
@@ -1857,15 +1851,6 @@ app.post('/api/mission', requireSoul, (req, res) => {
     return res.status(500).json({ error: 'Failed to add mission', details: error.message });
   }
 });
-
-
-
-
-
-// ============================================================
-// PILLAR 6: COMMAND LAYER â /api/command
-// Unified command interface for ZENITH Brain operations
-
 app.listen(PORT, async () => {
   console.log(`\n=== ZENITH v5.2.0 \u2014 SOUL AUTHENTICATED \u2014 SOVEREIGN MODE ===`);
   console.log(`Port: ${PORT}`);
