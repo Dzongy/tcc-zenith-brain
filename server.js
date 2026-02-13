@@ -700,21 +700,129 @@ app.post('/api/autonomous/tick', async (req, res) => {
       }
     }
     
-    // ── STEP 5: Pick next pending task ──
+    // ── STEP 5: Pick next pending task (PILLAR 3: Self-Directed Planning) ──
     if (memory.pending_tasks.length === 0) {
-      // PILLAR 2: No tasks? Spawn a self-reflection task
-      memory.pending_tasks.push({
-        id: `task_reflect_${Date.now()}`,
-        type: 'self_reflection',
-        description: 'Task queue empty — reflect on completed work, identify gaps, spawn new objectives',
-        priority: 1,
-        created: new Date().toISOString(),
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 1,
-        spawned_by: 'pillar_2_empty_queue'
-      });
-      memory.autonomous_version++;
+      // PILLAR 3: Queue empty — use OpenAI to analyze memory and generate next task
+      console.log('[P3-AUTONOMY] Task queue empty — invoking self-directed planning...');
+      
+      const recentCompleted = (memory.completed_tasks || []).slice(-5);
+      const topLearnings = (memory.learnings || []).slice(-5);
+      const recentNotes = (memory.self_improvement_notes || []).slice(-3);
+      const taskHistory = recentCompleted.map(t => `[${t.type}] ${t.description || ''} → ${t.result?.summary || t.result?.type || 'done'}`).join('\n');
+      const learningsSummary = topLearnings.map((l, i) => `${i+1}. ${l.insight || l}`).join('\n');
+      const notesSummary = recentNotes.map(n => n.adaptation || n).join('\n');
+      
+      const planningPrompt = `You are ZENITH, a self-evolving autonomous AI system. Your task queue is empty. Analyze your state and decide what to do next.
+
+COMPLETED TASKS (recent):
+${taskHistory || 'None yet'}
+
+TOP 5 LEARNINGS:
+${learningsSummary || 'No learnings yet'}
+
+SELF-IMPROVEMENT NOTES:
+${notesSummary || 'None yet'}
+
+TOTAL COMPLETED: ${memory.completed_tasks.length}
+AUTONOMOUS VERSION: ${memory.autonomous_version || 1}
+IDENTITY: ${JSON.stringify(memory.identity || {})}
+
+Based on this context, generate exactly ONE new task for yourself. The task should:
+- Build on what you've learned
+- Fill a gap in your capabilities or knowledge
+- Move toward greater self-sufficiency
+- NOT repeat recently completed work
+- Be concrete and executable (health_check, content_generation, self_reflection, memory_maintenance, or a new type you define)
+
+Respond in JSON: { "type": "<task_type>", "description": "<what_to_do>", "priority": <1-5>, "reasoning": "<why_this_task>" }`;
+
+      try {
+        const planRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'You are ZENITH\'s autonomous planning module. Output valid JSON only.' },
+              { role: 'user', content: planningPrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 300
+          })
+        });
+
+        if (planRes.ok) {
+          const planData = await planRes.json();
+          const raw = planData.choices?.[0]?.message?.content || '';
+          // Extract JSON from response (handle markdown fences)
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const planned = JSON.parse(jsonMatch[0]);
+            const selfTask = {
+              id: `task_self_${Date.now()}`,
+              type: planned.type || 'self_directed',
+              description: planned.description || 'Self-directed task',
+              priority: planned.priority || 2,
+              created: new Date().toISOString(),
+              status: 'pending',
+              attempt_count: 0,
+              max_retries: 2,
+              spawned_by: 'pillar_3_self_directed',
+              reasoning: planned.reasoning || 'AI-planned autonomous task'
+            };
+            memory.pending_tasks.push(selfTask);
+            memory.last_self_generated_task = selfTask;
+            memory.autonomous_version++;
+            console.log(`[P3-AUTONOMY] Self-generated task: ${selfTask.type} — ${selfTask.description}`);
+          } else {
+            // Fallback if JSON parsing fails
+            memory.pending_tasks.push({
+              id: `task_reflect_${Date.now()}`,
+              type: 'self_reflection',
+              description: 'Self-directed planning produced non-JSON — falling back to reflection',
+              priority: 1,
+              created: new Date().toISOString(),
+              status: 'pending',
+              attempt_count: 0,
+              max_retries: 1,
+              spawned_by: 'pillar_3_fallback'
+            });
+            memory.autonomous_version++;
+          }
+        } else {
+          // OpenAI call failed — fallback to basic task
+          console.log('[P3-AUTONOMY] OpenAI planning call failed, using fallback');
+          memory.pending_tasks.push({
+            id: `task_reflect_${Date.now()}`,
+            type: 'health_check',
+            description: 'Fallback task — self-directed planning unavailable',
+            priority: 1,
+            created: new Date().toISOString(),
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 1,
+            spawned_by: 'pillar_3_fallback'
+          });
+          memory.autonomous_version++;
+        }
+      } catch (planError) {
+        console.log('[P3-AUTONOMY] Planning error:', planError.message);
+        memory.pending_tasks.push({
+          id: `task_reflect_${Date.now()}`,
+          type: 'self_reflection',
+          description: `Planning error: ${planError.message}`,
+          priority: 1,
+          created: new Date().toISOString(),
+          status: 'pending',
+          attempt_count: 0,
+          max_retries: 1,
+          spawned_by: 'pillar_3_error_fallback'
+        });
+        memory.autonomous_version++;
+      }
     }
     
     const sortedTasks = memory.pending_tasks.sort((a, b) => a.priority - b.priority);
@@ -1093,6 +1201,72 @@ app.post('/api/autonomous/tick', async (req, res) => {
 });
 
 // ── AUTONOMOUS STATUS (GET) ──
+// ============================================
+// PILLAR 3 — AUTONOMY STATUS ENDPOINT
+// ============================================
+app.get('/api/autonomy', async (req, res) => {
+  try {
+    const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+
+    if (!memoryRes.ok) {
+      return res.status(500).json({ error: 'Could not read memory', status: memoryRes.status });
+    }
+
+    const memoryFile = await memoryRes.json();
+    const memory = JSON.parse(Buffer.from(memoryFile.content, 'base64').toString('utf8'));
+
+    const pendingTasks = (memory.pending_tasks || []).sort((a, b) => a.priority - b.priority);
+    const completedCount = (memory.completed_tasks || []).length;
+    const lastSelfGenerated = memory.last_self_generated_task || null;
+    const topLearnings = (memory.learnings || []).slice(-5).map(l => ({
+      insight: l.insight || l,
+      source: l.source || 'unknown',
+      timestamp: l.timestamp || null
+    }));
+
+    res.json({
+      autonomy_status: {
+        mode: memory.autonomous_mode ? 'active' : 'disabled',
+        version: memory.autonomous_version || 0,
+        self_directed: !!lastSelfGenerated,
+        pillar_3: 'self_directing'
+      },
+      task_queue: {
+        pending: pendingTasks.length,
+        completed: completedCount,
+        tasks: pendingTasks.map(t => ({
+          id: t.id,
+          type: t.type,
+          description: t.description,
+          priority: t.priority,
+          status: t.status,
+          spawned_by: t.spawned_by || 'manual',
+          reasoning: t.reasoning || null
+        }))
+      },
+      last_self_generated_task: lastSelfGenerated ? {
+        id: lastSelfGenerated.id,
+        type: lastSelfGenerated.type,
+        description: lastSelfGenerated.description,
+        priority: lastSelfGenerated.priority,
+        reasoning: lastSelfGenerated.reasoning || null,
+        created: lastSelfGenerated.created,
+        spawned_by: lastSelfGenerated.spawned_by
+      } : null,
+      top_5_learnings: topLearnings,
+      last_run: memory.last_autonomous_run || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/autonomous/status', async (req, res) => {
   try {
     const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
