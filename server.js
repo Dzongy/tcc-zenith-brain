@@ -6,6 +6,15 @@ const crypto = require('crypto');
 const app = express();
 app.use(bodyParser.json());
 
+// --- CORS ---
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth, X-Soul-Token, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 // Serve static files BEFORE routes
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -100,6 +109,21 @@ app.get('/api/missions', requireXAuth, requireSoul, (req, res) => {
 // --- Fallback: serve index.html for root ---
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
+// --- GET /api/health (X-Auth protected) ---
+app.get('/api/health', requireXAuth, (req, res) => {
+  res.json({
+    status: 'operational',
+    pillars: {
+      memory: 'ok',
+      'memory-manifest': 'ok',
+      'learnings-manifest': 'ok'
+    },
+    uptime: process.uptime(),
+    version: '1.0.0'
+  });
 });
 
 const PORT = process.env.PORT || 3000;
