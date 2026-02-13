@@ -62,7 +62,7 @@ app.get('/api/status', requireXAuth, (req, res) => {
   res.json({
     status: 'online',
     uptime: process.uptime(),
-    version: '1.0.0',
+    version: '2.0.0',
     name: 'ZENITH'
   });
 });
@@ -122,7 +122,7 @@ app.get('/api/health', requireXAuth, (req, res) => {
       'learnings-manifest': 'ok'
     },
     uptime: process.uptime(),
-    version: '1.0.0'
+    version: '2.0.0'
   });
 });
 
@@ -135,9 +135,17 @@ app.listen(PORT, () => {
 // --- KEEP-ALIVE SELF-PING (every 13 minutes) ---
 setInterval(() => {
   const https = require('https');
-  https.get('https://tcc-zenith-brain.onrender.com/api/health', (res) => {
+  const options = {
+    hostname: 'tcc-zenith-brain.onrender.com',
+    path: '/api/health',
+    method: 'GET',
+    headers: { 'X-Auth': 'amos-bridge-2026' }
+  };
+  const req = https.request(options, (res) => {
     console.log('[KEEP-ALIVE] Pinged /api/health, status:', res.statusCode);
-  }).on('error', (err) => {
+  });
+  req.on('error', (err) => {
     console.log('[KEEP-ALIVE] Ping failed:', err.message);
   });
+  req.end();
 }, 780000);
