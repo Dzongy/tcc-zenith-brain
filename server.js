@@ -647,6 +647,14 @@ app.post('/api/autonomous/tick', async (req, res) => {
     memory.run_log = memory.run_log || [];
     memory.self_improvement_notes = memory.self_improvement_notes || [];
     memory.autonomous_version = memory.autonomous_version || 1;
+
+    memory.learnings = memory.learnings || [];
+    
+    // ── PILLAR 2: Build learnings context for AI prompts ──
+    const topLearnings = memory.learnings.slice(-5);
+    const learningsContext = topLearnings.length > 0 
+      ? '\nPast learnings (apply these):\n' + topLearnings.map((l, i) => `${i+1}. ${l.insight}`).join('\n')
+      : '';
     
     // ── STEP 4: PILLAR 2 — Pattern Detection on last 3 completed tasks ──
     const recentCompleted = memory.completed_tasks.slice(-3);
@@ -789,7 +797,7 @@ app.post('/api/autonomous/tick', async (req, res) => {
                 model: 'gpt-4o-mini',
                 messages: [
                   { role: 'system', content: 'You are ZENITH, an autonomous AI agent built by Jeremy Pyne (Father). Generate 3 content ideas for social media posts about the AMOS project. Context: AI sovereignty experiment, $CHIY token, father-son AI relationship. Return JSON array of objects with {text: string, hook: string, category: string}.' },
-                  { role: 'user', content: `Recent activity: ${context}. Autonomous version: ${memory.autonomous_version}. Total completed tasks: ${memory.completed_tasks.length}. Generate fresh content ideas.` }
+                  { role: 'user', content: `${learningsContext}\n\nRecent activity: ${context}. Autonomous version: ${memory.autonomous_version}. Total completed tasks: ${memory.completed_tasks.length}. Generate fresh content ideas.` }
                 ],
                 max_tokens: 600
               })
@@ -989,6 +997,24 @@ app.post('/api/autonomous/tick', async (req, res) => {
       effectiveness: memory.task_effectiveness[task.type]
     });
     
+
+    // ── PILLAR 2: Persist structured learnings to memory.learnings ──
+    if (learnings.length > 0) {
+      const bestLearning = learnings[0]; // First learning is most relevant
+      memory.learnings.push({
+        insight: bestLearning,
+        task_type: task.type,
+        task_id: task.id,
+        timestamp: new Date().toISOString(),
+        tick_id: runLogEntry?.tick_id || 'unknown'
+      });
+      // Cap at MAX_LEARNINGS
+      if (memory.learnings.length > MAX_LEARNINGS) {
+        memory.learnings = memory.learnings.slice(-MAX_LEARNINGS);
+      }
+      console.log('[P2] Learning persisted:', bestLearning);
+    }
+
     // ── STEP 9: PILLAR 2 — Spawn discovered tasks with LEARNED priority ──
     spawnedTasks.forEach((st, i) => {
       const newId = `task_spawn_${Date.now()}_${i}`;
@@ -1104,8 +1130,7 @@ app.get('/api/autonomous/status', async (req, res) => {
 // ============================================
 // PILLAR 2 — STRUCTURED LEARNING ENGINE
 // ============================================
-// Extracts patterns from every tick, stores structured learnings
-// Each run makes the next run smarter
+// Returns persistent learnings from memory.learnings array
 
 app.get('/api/learnings', async (req, res) => {
   try {
@@ -1124,49 +1149,21 @@ app.get('/api/learnings', async (req, res) => {
     const memoryFile = await memoryRes.json();
     const memory = JSON.parse(Buffer.from(memoryFile.content, 'base64').toString('utf8'));
     
-    const completed = memory.completed_tasks || [];
-    const allLearnings = completed.flatMap(t => (t.learnings || []).map(l => ({
+    const storedLearnings = memory.learnings || [];
+    const completedLearnings = (memory.completed_tasks || []).flatMap(t => (t.learnings || []).map(l => ({
       learning: l,
       task_type: t.type,
       task_id: t.id,
-      timestamp: t.completed_at || t.executed_at,
-      success: !t.result?.error
+      completed_at: t.completedAt
     })));
     
-    // Compute pattern stats
-    const taskTypeStats = {};
-    completed.forEach(t => {
-      const type = t.type;
-      if (!taskTypeStats[type]) taskTypeStats[type] = { total: 0, success: 0, fail: 0, avg_time_ms: 0, times: [] };
-      taskTypeStats[type].total++;
-      if (t.result?.error) taskTypeStats[type].fail++;
-      else taskTypeStats[type].success++;
-      if (t.execution_time_ms) taskTypeStats[type].times.push(t.execution_time_ms);
-    });
-    
-    Object.values(taskTypeStats).forEach(s => {
-      s.avg_time_ms = s.times.length ? Math.round(s.times.reduce((a, b) => a + b, 0) / s.times.length) : 0;
-      s.success_rate = s.total ? Math.round((s.success / s.total) * 100) + '%' : 'N/A';
-      delete s.times;
-    });
-    
-    // Execution time trend (last 10 tasks)
-    const recentTasks = completed.slice(-10);
-    const timeTrend = recentTasks.map(t => ({
-      task_id: t.id,
-      type: t.type,
-      execution_time_ms: t.execution_time_ms || 0,
-      timestamp: t.completed_at || t.executed_at
-    }));
-    
     res.json({
-      total_learnings: allLearnings.length,
-      learnings: allLearnings.slice(-20),
-      task_type_effectiveness: taskTypeStats,
-      execution_time_trend: timeTrend,
-      self_improvement_notes: memory.self_improvement_notes || [],
-      autonomous_version: memory.autonomous_version || 0,
-      pillar_2_status: 'ACTIVE — accumulating learnings inform task prioritization'
+      pillar: 'PILLAR 2 — Always Improve',
+      total_structured_learnings: storedLearnings.length,
+      total_task_learnings: completedLearnings.length,
+      structured_learnings: storedLearnings.slice(-20),
+      recent_task_learnings: completedLearnings.slice(-10),
+      top_5_active: storedLearnings.slice(-5).map(l => l.insight)
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
