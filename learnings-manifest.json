@@ -1,6 +1,26 @@
 {
-  "categories": null,
-  "last_updated": "2026-02-13T07:00:49.817Z",
-  "status": null,
-  "version": null
+  "categories": {
+    "architecture_decisions": [
+      "ZENITH v5.2.0 uses three-pillar persistence: memory (zenith-memory.json), memory-manifest (memory-manifest.json), learnings-manifest (learnings-manifest.json)",
+      "All manifests auto-persist to GitHub on POST and load from GitHub on cold start",
+      "Self-healing health endpoint at /api/health checks all three pillars"
+    ],
+    "operational_learnings": [
+      "Render free tier spins down after 15 min inactivity — first request may take 30-60s",
+      "Always include existing env vars when PUT-ing Render env vars (replaces all)",
+      "Bridge auth header: X-Auth: amos-bridge-2026"
+    ],
+    "self_healing_log": [
+      {
+        "details": "Health check found categories: null, loadStatus: unknown. Rebuilt manifest with proper structure and re-posted to restore pillar.",
+        "event": "learnings-manifest restored",
+        "result": "pending_verification",
+        "timestamp": "2026-02-13T07:12:34Z"
+      }
+    ],
+    "startup_errors": []
+  },
+  "status": "active",
+  "version": "2.0.0",
+  "last_updated": "2026-02-13T07:12:54.192Z"
 }
