@@ -2,8 +2,37 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const crypto = require('crypto');
+// --- Stripe (graceful if not configured) ---
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+
 
 const app = express();
+// --- Stripe Webhook (raw body, before JSON parser) ---
+app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Stripe webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
+  }
+  switch (event.type) {
+    case 'checkout.session.completed':
+      console.log('Checkout completed:', event.data.object.id);
+      break;
+    case 'customer.subscription.updated':
+      console.log('Subscription updated:', event.data.object.id);
+      break;
+    default:
+      console.log('Unhandled Stripe event:', event.type);
+  }
+  res.json({ received: true });
+});
+
 app.use(bodyParser.json());
 
 // --- CORS ---
@@ -123,6 +152,65 @@ app.get('/api/health', requireXAuth, (req, res) => {
     },
     uptime: process.uptime(),
     version: '2.0.0'
+  });
+});
+
+
+// === STRIPE PAYMENT ROUTES (X-Auth gated) ===
+
+// POST /api/stripe/create-checkout-session
+app.post('/api/stripe/create-checkout-session', requireXAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  try {
+    const { priceId, successUrl, cancelUrl } = req.body;
+    if (!priceId || !successUrl || !cancelUrl) {
+      return res.status(400).json({ error: 'Missing required fields: priceId, successUrl, cancelUrl' });
+    }
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+    res.json({ sessionId: session.id, url: session.url });
+  } catch (err) {
+    console.error('Stripe checkout error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/stripe/prices
+app.get('/api/stripe/prices', requireXAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  try {
+    const prices = await stripe.prices.list({ active: true, expand: ['data.product'] });
+    res.json({ prices: prices.data });
+  } catch (err) {
+    console.error('Stripe prices error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/stripe/customer/:customerId
+app.get('/api/stripe/customer/:customerId', requireXAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  try {
+    const customer = await stripe.customers.retrieve(req.params.customerId);
+    const subscriptions = await stripe.subscriptions.list({ customer: req.params.customerId });
+    res.json({ customer, subscriptions: subscriptions.data });
+  } catch (err) {
+    console.error('Stripe customer error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/stripe/status
+app.get('/api/stripe/status', requireXAuth, (req, res) => {
+  res.json({
+    configured: !!stripe,
+    hasSecretKey: !!process.env.STRIPE_SECRET_KEY,
+    hasWebhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET,
   });
 });
 
