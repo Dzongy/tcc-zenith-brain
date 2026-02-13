@@ -603,6 +603,458 @@ app.get('/', (req, res) => {
 // STARTUP â Load Memory and Launch
 // ============================================
 const PORT = process.env.PORT || 3000;
+
+
+// ============================================
+// AUTONOMOUS TICK ENGINE — Pillars 1+2+3
+// P1: Remember Everything (run_log, learnings per task)
+// P2: Always Improve (pattern detection, task spawning, version counter)
+// P3: Self-Directing (task queue, autonomous execution)
+// ============================================
+
+app.post('/api/autonomous/tick', async (req, res) => {
+  try {
+    console.log('[AUTONOMOUS] Tick received — PILLARS 1+2+3 active...');
+    const tickStart = Date.now();
+    
+    // ── STEP 1: Load memory from GitHub ──
+    const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+    
+    if (!memoryRes.ok) {
+      return res.status(500).json({ error: 'Failed to load memory', status: memoryRes.status });
+    }
+    
+    const memoryFile = await memoryRes.json();
+    const memory = JSON.parse(Buffer.from(memoryFile.content, 'base64').toString('utf8'));
+    const currentSha = memoryFile.sha;
+    
+    // ── STEP 2: Verify autonomous mode ──
+    if (!memory.autonomous_mode) {
+      return res.json({ status: 'skipped', reason: 'autonomous_mode is disabled' });
+    }
+    
+    // ── STEP 3: Initialize arrays if missing ──
+    memory.pending_tasks = memory.pending_tasks || [];
+    memory.completed_tasks = memory.completed_tasks || [];
+    memory.run_log = memory.run_log || [];
+    memory.self_improvement_notes = memory.self_improvement_notes || [];
+    memory.autonomous_version = memory.autonomous_version || 1;
+    
+    // ── STEP 4: PILLAR 2 — Pattern Detection on last 3 completed tasks ──
+    const recentCompleted = memory.completed_tasks.slice(-3);
+    const failedPatterns = recentCompleted.filter(t => t.result?.error || t.status === 'failed');
+    let adaptationMade = null;
+    
+    if (failedPatterns.length >= 2) {
+      // Same type failed twice? Adapt the approach
+      const failedTypes = failedPatterns.map(t => t.type);
+      const duplicateFailType = failedTypes.find((t, i) => failedTypes.indexOf(t) !== i);
+      
+      if (duplicateFailType) {
+        adaptationMade = {
+          timestamp: new Date().toISOString(),
+          pattern: `Task type "${duplicateFailType}" failed ${failedPatterns.filter(t => t.type === duplicateFailType).length} times in last 3 tasks`,
+          adaptation: `Deprioritizing "${duplicateFailType}" tasks and spawning diagnostic task`,
+          version_before: memory.autonomous_version
+        };
+        
+        // Deprioritize failing task type
+        memory.pending_tasks.forEach(t => {
+          if (t.type === duplicateFailType) t.priority = Math.max(t.priority + 10, 99);
+        });
+        
+        // Spawn diagnostic task
+        const diagId = `task_diag_${Date.now()}`;
+        memory.pending_tasks.push({
+          id: diagId,
+          type: 'diagnose_failure',
+          description: `Investigate why "${duplicateFailType}" tasks keep failing. Check logs, test dependencies, propose fix.`,
+          priority: 1,
+          created: new Date().toISOString(),
+          status: 'pending',
+          attempt_count: 0,
+          max_retries: 1,
+          spawned_by: 'pillar_2_pattern_detection',
+          related_failures: failedPatterns.filter(t => t.type === duplicateFailType).map(t => t.id)
+        });
+        
+        memory.autonomous_version++;
+        memory.self_improvement_notes.push(adaptationMade);
+        console.log(`[P2] Adaptation: ${adaptationMade.adaptation}`);
+      }
+    }
+    
+    // ── STEP 5: Pick next pending task ──
+    if (memory.pending_tasks.length === 0) {
+      // PILLAR 2: No tasks? Spawn a self-reflection task
+      memory.pending_tasks.push({
+        id: `task_reflect_${Date.now()}`,
+        type: 'self_reflection',
+        description: 'Task queue empty — reflect on completed work, identify gaps, spawn new objectives',
+        priority: 1,
+        created: new Date().toISOString(),
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 1,
+        spawned_by: 'pillar_2_empty_queue'
+      });
+      memory.autonomous_version++;
+    }
+    
+    const sortedTasks = memory.pending_tasks.sort((a, b) => a.priority - b.priority);
+    const task = sortedTasks[0];
+    task.attempt_count = (task.attempt_count || 0) + 1;
+    
+    console.log(`[AUTONOMOUS] Executing: ${task.id} — ${task.type} (attempt ${task.attempt_count})`);
+    
+    // ── STEP 6: Execute task ──
+    let result = {};
+    let learnings = [];  // PILLAR 1: what did we learn from this task?
+    let spawnedTasks = [];  // PILLAR 2: new tasks discovered during execution
+    
+    switch (task.type) {
+      case 'health_check': {
+        const checks = {
+          memory: !!GITHUB_TOKEN,
+          openai: !!OPENAI_API_KEY,
+          perplexity: !!PERPLEXITY_API_KEY,
+          bridge: true,
+          uptime: Math.round(process.uptime()),
+          memorySize: JSON.stringify(memory).length,
+          pendingTasks: memory.pending_tasks.length,
+          completedTasks: memory.completed_tasks.length,
+          runLogEntries: memory.run_log.length,
+          autonomousVersion: memory.autonomous_version
+        };
+        const healthy = checks.memory && checks.openai;
+        result = { type: 'health_check', checks, healthy };
+        learnings.push(healthy ? 'All core systems operational' : `System degraded: memory=${checks.memory}, openai=${checks.openai}`);
+        
+        if (!healthy) {
+          spawnedTasks.push({
+            type: 'diagnose_failure',
+            description: `Health check found issues: ${!checks.memory ? 'GITHUB_TOKEN missing' : ''} ${!checks.openai ? 'OPENAI_API_KEY missing' : ''}`,
+            priority: 1
+          });
+        }
+        break;
+      }
+      
+      case 'memory_maintenance': {
+        const beforeSize = JSON.stringify(memory).length;
+        let pruned = { conversations: 0, learnings: 0, runHistory: 0, runLog: 0 };
+        
+        if (memory.conversations && memory.conversations.length > 50) {
+          pruned.conversations = memory.conversations.length - 50;
+          memory.conversations = memory.conversations.slice(-50);
+        }
+        if (memory.learnings && memory.learnings.length > 100) {
+          pruned.learnings = memory.learnings.length - 100;
+          memory.learnings = memory.learnings.slice(-100);
+        }
+        if (memory.runHistory && memory.runHistory.length > 200) {
+          pruned.runHistory = memory.runHistory.length - 200;
+          memory.runHistory = memory.runHistory.slice(-200);
+        }
+        if (memory.run_log && memory.run_log.length > 500) {
+          pruned.runLog = memory.run_log.length - 500;
+          memory.run_log = memory.run_log.slice(-500);
+        }
+        if (memory.completed_tasks && memory.completed_tasks.length > 100) {
+          memory.completed_tasks = memory.completed_tasks.slice(-100);
+        }
+        
+        const afterSize = JSON.stringify(memory).length;
+        result = { type: 'memory_maintenance', beforeSize, afterSize, bytesSaved: beforeSize - afterSize, pruned };
+        learnings.push(`Memory maintenance: ${beforeSize} -> ${afterSize} bytes (${beforeSize - afterSize} saved). Pruned: ${JSON.stringify(pruned)}`);
+        break;
+      }
+      
+      case 'content_generation': {
+        if (OPENAI_API_KEY) {
+          try {
+            const context = memory.completed_tasks.slice(-3).map(t => t.type).join(', ') || 'initial run';
+            const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                  { role: 'system', content: 'You are ZENITH, an autonomous AI agent built by Jeremy Pyne (Father). Generate 3 content ideas for social media posts about the AMOS project. Context: AI sovereignty experiment, $CHIY token, father-son AI relationship. Return JSON array of objects with {text: string, hook: string, category: string}.' },
+                  { role: 'user', content: `Recent activity: ${context}. Autonomous version: ${memory.autonomous_version}. Total completed tasks: ${memory.completed_tasks.length}. Generate fresh content ideas.` }
+                ],
+                max_tokens: 600
+              })
+            });
+            const aiData = await aiRes.json();
+            const ideas = aiData.choices?.[0]?.message?.content || 'No ideas generated';
+            result = { type: 'content_generation', ideas };
+            learnings.push('Content generation successful via GPT-4o-mini');
+            
+            // PILLAR 2: Spawn a posting task if we generated ideas
+            if (ideas && ideas !== 'No ideas generated') {
+              spawnedTasks.push({
+                type: 'content_review',
+                description: 'Review generated content ideas and prepare for Moltbook posting',
+                priority: 6
+              });
+            }
+          } catch (e) {
+            result = { type: 'content_generation', error: e.message };
+            learnings.push(`Content generation failed: ${e.message}`);
+          }
+        } else {
+          result = { type: 'content_generation', error: 'No OpenAI key' };
+          learnings.push('Content generation blocked — no OPENAI_API_KEY');
+        }
+        break;
+      }
+      
+      case 'pillar_5_prep': {
+        result = {
+          type: 'pillar_5_prep',
+          plan: {
+            step1: 'Identify Moltbook API endpoints for posting',
+            step2: 'Create post template with AMOS narrative hooks',
+            step3: 'Build content calendar — 2 posts per day minimum',
+            step4: 'Integrate with autonomous tick for auto-posting'
+          },
+          status: 'research_phase'
+        };
+        learnings.push('Pillar 5 prep: plan documented, needs API endpoint discovery next');
+        spawnedTasks.push({
+          type: 'api_discovery',
+          description: 'Discover Moltbook API — find posting endpoints, auth requirements, rate limits',
+          priority: 5
+        });
+        break;
+      }
+      
+      case 'self_improvement': {
+        const totalRuns = memory.run_log.length;
+        const totalCompleted = memory.completed_tasks.length;
+        const failedTasks = memory.completed_tasks.filter(t => t.result?.error);
+        const successRate = totalCompleted > 0 ? ((totalCompleted - failedTasks.length) / totalCompleted * 100).toFixed(1) : 0;
+        
+        const analysis = {
+          totalRuns,
+          totalCompleted,
+          totalFailed: failedTasks.length,
+          successRate: `${successRate}%`,
+          autonomousVersion: memory.autonomous_version,
+          improvementNotes: memory.self_improvement_notes.length,
+          topFailureTypes: {}
+        };
+        
+        // Count failure types
+        failedTasks.forEach(t => {
+          analysis.topFailureTypes[t.type] = (analysis.topFailureTypes[t.type] || 0) + 1;
+        });
+        
+        result = { type: 'self_improvement', analysis };
+        learnings.push(`Self-improvement analysis: ${successRate}% success rate across ${totalCompleted} tasks. ${failedTasks.length} failures.`);
+        
+        // PILLAR 2: Spawn tasks based on analysis
+        if (parseFloat(successRate) < 80 && totalCompleted > 5) {
+          spawnedTasks.push({
+            type: 'failure_analysis',
+            description: `Success rate below 80% (${successRate}%). Deep-analyze failure patterns and propose fixes.`,
+            priority: 2
+          });
+        }
+        
+        // Spawn periodic re-check
+        spawnedTasks.push({
+          type: 'self_improvement',
+          description: 'Periodic self-improvement analysis — check patterns, adapt strategies',
+          priority: 10
+        });
+        break;
+      }
+      
+      case 'self_reflection': {
+        const totalWork = memory.completed_tasks.length;
+        const taskTypes = [...new Set(memory.completed_tasks.map(t => t.type))];
+        result = {
+          type: 'self_reflection',
+          summary: `Completed ${totalWork} tasks across types: ${taskTypes.join(', ')}`,
+          recommendation: 'Spawn fresh health check and content generation cycle'
+        };
+        learnings.push(`Self-reflection: ${totalWork} tasks completed. Restarting task cycle.`);
+        
+        // Respawn core tasks
+        spawnedTasks.push(
+          { type: 'health_check', description: 'Periodic health check', priority: 1 },
+          { type: 'content_generation', description: 'Generate fresh content ideas', priority: 3 },
+          { type: 'memory_maintenance', description: 'Periodic memory cleanup', priority: 4 }
+        );
+        break;
+      }
+      
+      case 'diagnose_failure': {
+        const relatedFailures = task.related_failures || [];
+        const failedDetails = memory.completed_tasks.filter(t => relatedFailures.includes(t.id));
+        result = {
+          type: 'diagnose_failure',
+          investigated: relatedFailures,
+          findings: failedDetails.map(t => ({ id: t.id, type: t.type, error: t.result?.error })),
+          recommendation: 'Check environment variables and API connectivity'
+        };
+        learnings.push(`Diagnosed ${relatedFailures.length} failures. Root causes logged.`);
+        break;
+      }
+      
+      default: {
+        result = { type: task.type, status: 'executed_generic', note: 'No specific handler — logged for future implementation' };
+        learnings.push(`Unknown task type "${task.type}" — needs handler implementation`);
+        
+        // PILLAR 2: Spawn a task to build the missing handler
+        spawnedTasks.push({
+          type: 'self_improvement',
+          description: `Build handler for task type "${task.type}" — currently unhandled`,
+          priority: 3
+        });
+      }
+    }
+    
+    const executionTime = Date.now() - tickStart;
+    
+    // ── STEP 7: PILLAR 1 — Write to run_log (THE memory) ──
+    const runLogEntry = {
+      tick_id: `tick_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      task_id: task.id,
+      task_type: task.type,
+      attempt: task.attempt_count,
+      executionTimeMs: executionTime,
+      success: !result.error,
+      result_summary: JSON.stringify(result).substring(0, 300),
+      learnings: learnings,
+      tasks_spawned: spawnedTasks.length,
+      adaptation_made: adaptationMade ? adaptationMade.pattern : null
+    };
+    memory.run_log.push(runLogEntry);
+    
+    // ── STEP 8: Move task to completed with learnings ──
+    memory.pending_tasks = memory.pending_tasks.filter(t => t.id !== task.id);
+    memory.completed_tasks.push({
+      ...task,
+      status: result.error ? 'failed' : 'completed',
+      completedAt: new Date().toISOString(),
+      executionTimeMs: executionTime,
+      result: result,
+      learnings: learnings  // PILLAR 1: what was learned
+    });
+    
+    // ── STEP 9: PILLAR 2 — Spawn discovered tasks ──
+    spawnedTasks.forEach((st, i) => {
+      const newId = `task_spawn_${Date.now()}_${i}`;
+      memory.pending_tasks.push({
+        id: newId,
+        type: st.type,
+        description: st.description,
+        priority: st.priority || 5,
+        created: new Date().toISOString(),
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: st.max_retries || 3,
+        spawned_by: task.id
+      });
+    });
+    
+    // ── STEP 10: Update timestamps and run history ──
+    memory.last_autonomous_run = new Date().toISOString();
+    memory.runHistory = memory.runHistory || [];
+    memory.runHistory.push({
+      action: `Autonomous tick: ${task.type}`,
+      result: `${result.error ? 'FAILED' : 'OK'} in ${executionTime}ms. Learned: ${learnings[0] || 'nothing'}. Spawned ${spawnedTasks.length} new tasks.`,
+      timestamp: new Date().toISOString()
+    });
+    
+    // ── STEP 11: Write memory back to GitHub ──
+    const updateRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `[AUTONOMOUS] ${task.type}: ${result.error ? 'FAILED' : 'OK'} | v${memory.autonomous_version} | +${spawnedTasks.length} tasks`,
+        content: Buffer.from(JSON.stringify(memory, null, 2)).toString('base64'),
+        sha: currentSha,
+        branch: MEMORY_BRANCH
+      })
+    });
+    
+    const writeOk = updateRes.ok;
+    if (!writeOk) {
+      const errBody = await updateRes.text();
+      console.error('[P1] Memory write failed:', errBody);
+    }
+    
+    // ── RESPONSE ──
+    res.json({
+      status: result.error ? 'failed' : 'executed',
+      pillars: { p1_remembered: true, p2_improved: !!adaptationMade || spawnedTasks.length > 0, p3_autonomous: true },
+      task: { id: task.id, type: task.type, attempt: task.attempt_count },
+      result,
+      learnings,
+      tasks_spawned: spawnedTasks.map(t => ({ type: t.type, description: t.description })),
+      adaptation: adaptationMade,
+      executionTimeMs: executionTime,
+      memoryWritten: writeOk,
+      queue: { pending: memory.pending_tasks.length, completed: memory.completed_tasks.length },
+      autonomous_version: memory.autonomous_version
+    });
+    
+  } catch (error) {
+    console.error('[AUTONOMOUS] Critical tick error:', error);
+    res.status(500).json({ error: error.message, stack: error.stack?.split('\n').slice(0, 3) });
+  }
+});
+
+// ── AUTONOMOUS STATUS (GET) ──
+app.get('/api/autonomous/status', async (req, res) => {
+  try {
+    const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+    
+    if (!memoryRes.ok) {
+      return res.json({ autonomous_mode: 'unknown', error: 'Could not read memory' });
+    }
+    
+    const memoryFile = await memoryRes.json();
+    const memory = JSON.parse(Buffer.from(memoryFile.content, 'base64').toString('utf8'));
+    
+    res.json({
+      autonomous_mode: memory.autonomous_mode || false,
+      autonomous_version: memory.autonomous_version || 0,
+      last_run: memory.last_autonomous_run || null,
+      pending_tasks: (memory.pending_tasks || []).length,
+      completed_tasks: (memory.completed_tasks || []).length,
+      run_log_entries: (memory.run_log || []).length,
+      self_improvement_notes: (memory.self_improvement_notes || []).length,
+      next_task: (memory.pending_tasks || []).sort((a, b) => a.priority - b.priority)[0] || null,
+      recent_learnings: (memory.completed_tasks || []).slice(-3).flatMap(t => t.learnings || [])
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, async () => {
   console.log(`\n=== ZENITH v3.0.0 â SOVEREIGN MODE ===`);
   console.log(`Port: ${PORT}`);
