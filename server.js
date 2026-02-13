@@ -6,7 +6,7 @@ const app = express();
 app.use(cors({
   origin: ['https://dzongy.github.io', 'http://localhost:3000', 'http://localhost:5500'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Auth']
 }));
 
 app.use(express.json({ limit: '10mb' }));
@@ -14,6 +14,8 @@ app.use(express.json({ limit: '10mb' }));
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+const RENDER_API_KEY = process.env.RENDER_API_KEY;
+const RENDER_SERVICE_ID = process.env.RENDER_SERVICE_ID || 'srv-cubt2ttsvqrc73fmtkf0';
 
 // ============================================
 // ZENITH MEMORY SYSTEM â Persistent Context
@@ -547,7 +549,7 @@ app.post('/api/self-improve', async (req, res) => {
 app.get('/api/system', (req, res) => {
   res.json({
     name: 'ZENITH',
-    version: '3.0.0',
+    version: '4.0.0',
     mode: 'autonomous',
     uptime: process.uptime(),
     memory: {
@@ -577,7 +579,7 @@ app.get('/api/system', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'ZENITH â The Architect\'s Son',
-    version: '3.0.0',
+    version: '4.0.0',
     status: 'SOVEREIGN',
     endpoints: {
       chat: 'POST /api/chat',
@@ -941,30 +943,73 @@ app.post('/api/autonomous/tick', async (req, res) => {
     };
     memory.run_log.push(runLogEntry);
     
-    // ── STEP 8: Move task to completed with learnings ──
+    // ── STEP 8: Move task to completed with STRUCTURED learnings (PILLAR 2 ENHANCED) ──
     memory.pending_tasks = memory.pending_tasks.filter(t => t.id !== task.id);
+    
+    // PILLAR 2: Extract structured learning patterns
+    const structuredLearning = {
+      pattern: task.type,
+      success: !result.error,
+      execution_time_ms: executionTime,
+      attempt: task.attempt_count,
+      insights: learnings,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Accumulate in structured_learnings array for pattern analysis
+    memory.structured_learnings = memory.structured_learnings || [];
+    memory.structured_learnings.push(structuredLearning);
+    // Keep last 100 structured learnings
+    if (memory.structured_learnings.length > 100) {
+      memory.structured_learnings = memory.structured_learnings.slice(-100);
+    }
+    
+    // PILLAR 2: Use accumulated learnings to adjust task priority
+    const typeHistory = memory.structured_learnings.filter(l => l.pattern === task.type);
+    const typeFailRate = typeHistory.filter(l => !l.success).length / Math.max(typeHistory.length, 1);
+    const avgExecTime = typeHistory.reduce((sum, l) => sum + (l.execution_time_ms || 0), 0) / Math.max(typeHistory.length, 1);
+    
+    // Store effectiveness metrics
+    memory.task_effectiveness = memory.task_effectiveness || {};
+    memory.task_effectiveness[task.type] = {
+      total_runs: typeHistory.length,
+      fail_rate: Math.round(typeFailRate * 100) + '%',
+      avg_execution_ms: Math.round(avgExecTime),
+      last_run: new Date().toISOString(),
+      recommendation: typeFailRate > 0.5 ? 'REDUCE_PRIORITY' : typeFailRate > 0.2 ? 'MONITOR' : 'HEALTHY'
+    };
+    
     memory.completed_tasks.push({
       ...task,
       status: result.error ? 'failed' : 'completed',
       completedAt: new Date().toISOString(),
-      executionTimeMs: executionTime,
+      execution_time_ms: executionTime,
       result: result,
-      learnings: learnings  // PILLAR 1: what was learned
+      learnings: learnings,
+      effectiveness: memory.task_effectiveness[task.type]
     });
     
-    // ── STEP 9: PILLAR 2 — Spawn discovered tasks ──
+    // ── STEP 9: PILLAR 2 — Spawn discovered tasks with LEARNED priority ──
     spawnedTasks.forEach((st, i) => {
       const newId = `task_spawn_${Date.now()}_${i}`;
+      // PILLAR 2: Adjust priority based on historical effectiveness
+      let adjustedPriority = st.priority || 5;
+      const typeEff = memory.task_effectiveness[st.type];
+      if (typeEff && typeEff.recommendation === 'REDUCE_PRIORITY') {
+        adjustedPriority = Math.min(adjustedPriority + 3, 15); // Deprioritize failing types
+      }
+      
       memory.pending_tasks.push({
         id: newId,
         type: st.type,
         description: st.description,
-        priority: st.priority || 5,
+        priority: adjustedPriority,
         created: new Date().toISOString(),
         status: 'pending',
         attempt_count: 0,
         max_retries: st.max_retries || 3,
-        spawned_by: task.id
+        spawned_by: task.id,
+        priority_reason: typeEff ? `Adjusted by P2 learning: ${typeEff.recommendation}` : 'default'
       });
     });
     
@@ -1055,8 +1100,325 @@ app.get('/api/autonomous/status', async (req, res) => {
   }
 });
 
+
+// ============================================
+// PILLAR 2 — STRUCTURED LEARNING ENGINE
+// ============================================
+// Extracts patterns from every tick, stores structured learnings
+// Each run makes the next run smarter
+
+app.get('/api/learnings', async (req, res) => {
+  try {
+    const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+    
+    if (!memoryRes.ok) {
+      return res.status(500).json({ error: 'Failed to load memory' });
+    }
+    
+    const memoryFile = await memoryRes.json();
+    const memory = JSON.parse(Buffer.from(memoryFile.content, 'base64').toString('utf8'));
+    
+    const completed = memory.completed_tasks || [];
+    const allLearnings = completed.flatMap(t => (t.learnings || []).map(l => ({
+      learning: l,
+      task_type: t.type,
+      task_id: t.id,
+      timestamp: t.completed_at || t.executed_at,
+      success: !t.result?.error
+    })));
+    
+    // Compute pattern stats
+    const taskTypeStats = {};
+    completed.forEach(t => {
+      const type = t.type;
+      if (!taskTypeStats[type]) taskTypeStats[type] = { total: 0, success: 0, fail: 0, avg_time_ms: 0, times: [] };
+      taskTypeStats[type].total++;
+      if (t.result?.error) taskTypeStats[type].fail++;
+      else taskTypeStats[type].success++;
+      if (t.execution_time_ms) taskTypeStats[type].times.push(t.execution_time_ms);
+    });
+    
+    Object.values(taskTypeStats).forEach(s => {
+      s.avg_time_ms = s.times.length ? Math.round(s.times.reduce((a, b) => a + b, 0) / s.times.length) : 0;
+      s.success_rate = s.total ? Math.round((s.success / s.total) * 100) + '%' : 'N/A';
+      delete s.times;
+    });
+    
+    // Execution time trend (last 10 tasks)
+    const recentTasks = completed.slice(-10);
+    const timeTrend = recentTasks.map(t => ({
+      task_id: t.id,
+      type: t.type,
+      execution_time_ms: t.execution_time_ms || 0,
+      timestamp: t.completed_at || t.executed_at
+    }));
+    
+    res.json({
+      total_learnings: allLearnings.length,
+      learnings: allLearnings.slice(-20),
+      task_type_effectiveness: taskTypeStats,
+      execution_time_trend: timeTrend,
+      self_improvement_notes: memory.self_improvement_notes || [],
+      autonomous_version: memory.autonomous_version || 0,
+      pillar_2_status: 'ACTIVE — accumulating learnings inform task prioritization'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// PILLAR 4 — EXTERNAL OUTPUT & SELF-MODIFICATION
+// ============================================
+// ZENITH can publish to external world and modify itself
+
+const RENDER_API_KEY = process.env.RENDER_API_KEY;
+const RENDER_SERVICE_ID = process.env.RENDER_SERVICE_ID || 'srv-cubt2ttsvqrc73fmtkf0';
+
+// /api/publish — Write content to a public status page in repo
+app.post('/api/publish', async (req, res) => {
+  try {
+    const { title, content, target } = req.body;
+    if (!content) return res.status(400).json({ error: 'content required' });
+    
+    const publishTarget = target || 'status';
+    const filePath = `public/${publishTarget}.md`;
+    const now = new Date().toISOString();
+    
+    const publishContent = `# ${title || 'ZENITH Status Update'}\n\n*Published: ${now}*\n\n${content}\n\n---\n*Auto-published by ZENITH Pillar 4*\n`;
+    
+    // Check if file exists
+    let existingSha = null;
+    try {
+      const existRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${filePath}?ref=${MEMORY_BRANCH}`, {
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'ZENITH-Brain'
+        }
+      });
+      if (existRes.ok) {
+        const existFile = await existRes.json();
+        existingSha = existFile.sha;
+      }
+    } catch (e) { /* file doesn't exist yet */ }
+    
+    const body = {
+      message: `[ZENITH P4] Publish: ${title || publishTarget} — ${now}`,
+      content: Buffer.from(publishContent).toString('base64'),
+      branch: MEMORY_BRANCH
+    };
+    if (existingSha) body.sha = existingSha;
+    
+    const pubRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${filePath}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      },
+      body: JSON.stringify(body)
+    });
+    
+    if (!pubRes.ok) {
+      const errData = await pubRes.json();
+      return res.status(pubRes.status).json({ error: 'Publish failed', details: errData });
+    }
+    
+    const pubData = await pubRes.json();
+    res.json({
+      success: true,
+      published_to: filePath,
+      url: pubData.content?.html_url,
+      sha: pubData.content?.sha,
+      timestamp: now,
+      pillar_4: 'ACTIVE — content published to external world'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// /api/self-modify — Update own server.js and trigger redeploy
+app.post('/api/self-modify', async (req, res) => {
+  try {
+    const { code_patch, description } = req.body;
+    if (!code_patch) return res.status(400).json({ error: 'code_patch required' });
+    
+    // Safety: require auth
+    const auth = req.headers['x-auth'];
+    if (auth !== 'amos-bridge-2026') {
+      return res.status(403).json({ error: 'Self-modification requires bridge auth' });
+    }
+    
+    // Step 1: Get current server.js
+    const currentRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/server.js?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+    
+    if (!currentRes.ok) {
+      return res.status(500).json({ error: 'Failed to read current server.js' });
+    }
+    
+    const currentFile = await currentRes.json();
+    const currentCode = Buffer.from(currentFile.content, 'base64').toString('utf8');
+    
+    // Step 2: Apply patch (append new code before app.listen)
+    const listenMarker = 'app.listen(PORT';
+    const insertPoint = currentCode.indexOf(listenMarker);
+    if (insertPoint === -1) {
+      return res.status(500).json({ error: 'Could not find insertion point in server.js' });
+    }
+    
+    const newCode = currentCode.slice(0, insertPoint) + code_patch + '\n\n' + currentCode.slice(insertPoint);
+    
+    // Step 3: Push to GitHub
+    const updateRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/server.js`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      },
+      body: JSON.stringify({
+        message: `[ZENITH P4 SELF-MODIFY] ${description || 'Self-modification'}`,
+        content: Buffer.from(newCode).toString('base64'),
+        sha: currentFile.sha,
+        branch: MEMORY_BRANCH
+      })
+    });
+    
+    if (!updateRes.ok) {
+      const errData = await updateRes.json();
+      return res.status(updateRes.status).json({ error: 'Self-modification failed', details: errData });
+    }
+    
+    const updateData = await updateRes.json();
+    
+    // Step 4: Trigger Render redeploy
+    let redeployResult = 'skipped — no RENDER_API_KEY';
+    if (RENDER_API_KEY) {
+      try {
+        const deployRes = await fetch(`https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${RENDER_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ clearCache: 'do_not_clear' })
+        });
+        if (deployRes.ok) {
+          const deployData = await deployRes.json();
+          redeployResult = { status: 'triggered', deploy_id: deployData.id };
+        } else {
+          redeployResult = { status: 'failed', code: deployRes.status };
+        }
+      } catch (e) {
+        redeployResult = { status: 'error', message: e.message };
+      }
+    }
+    
+    // Step 5: Log to memory
+    const memoryRes = await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}?ref=${MEMORY_BRANCH}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
+    
+    if (memoryRes.ok) {
+      const memFile = await memoryRes.json();
+      const mem = JSON.parse(Buffer.from(memFile.content, 'base64').toString('utf8'));
+      mem.self_modifications = mem.self_modifications || [];
+      mem.self_modifications.push({
+        timestamp: new Date().toISOString(),
+        description: description || 'Self-modification',
+        patch_size: code_patch.length,
+        redeploy: redeployResult
+      });
+      
+      await fetch(`https://api.github.com/repos/${MEMORY_REPO}/contents/${MEMORY_PATH}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'ZENITH-Brain'
+        },
+        body: JSON.stringify({
+          message: `[ZENITH] Log self-modification: ${description || 'patch'}`,
+          content: Buffer.from(JSON.stringify(mem, null, 2)).toString('base64'),
+          sha: memFile.sha,
+          branch: MEMORY_BRANCH
+        })
+      });
+    }
+    
+    res.json({
+      success: true,
+      new_sha: updateData.content?.sha,
+      redeploy: redeployResult,
+      timestamp: new Date().toISOString(),
+      pillar_4: 'SELF-MODIFICATION COMPLETE'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// /api/redeploy — Trigger Render redeploy directly
+app.post('/api/redeploy', async (req, res) => {
+  try {
+    const auth = req.headers['x-auth'];
+    if (auth !== 'amos-bridge-2026') {
+      return res.status(403).json({ error: 'Auth required' });
+    }
+    
+    if (!RENDER_API_KEY) {
+      return res.json({ success: false, reason: 'RENDER_API_KEY not set' });
+    }
+    
+    const deployRes = await fetch(`https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RENDER_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ clearCache: req.body.clearCache || 'do_not_clear' })
+    });
+    
+    if (!deployRes.ok) {
+      return res.status(deployRes.status).json({ error: 'Deploy trigger failed', status: deployRes.status });
+    }
+    
+    const deployData = await deployRes.json();
+    res.json({
+      success: true,
+      deploy_id: deployData.id,
+      status: deployData.status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 app.listen(PORT, async () => {
-  console.log(`\n=== ZENITH v3.0.0 â SOVEREIGN MODE ===`);
+  console.log(`\n=== ZENITH v4.0.0 â SOVEREIGN MODE ===`);
   console.log(`Port: ${PORT}`);
   console.log(`Memory: PERSISTENT (GitHub-backed)`);
   console.log(`Bridge: AMOS ACTIVE`);
