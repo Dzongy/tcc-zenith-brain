@@ -1592,13 +1592,13 @@ async function loadLearnings() {
   }
 }
 
-// GET /api/learnings â return stored learnings manifest
-app.get('/api/learnings', requireBridgeAuth, (req, res) => {
+// GET /api/learnings-manifest â return stored learnings manifest
+app.get('/api/learnings-manifest', requireBridgeAuth, (req, res) => {
   res.json(learningsManifest || {});
 });
 
-// POST /api/learnings â overwrite learnings manifest and persist to GitHub
-app.post('/api/learnings', requireBridgeAuth, async (req, res) => {
+// POST /api/learnings-manifest â overwrite learnings manifest and persist to GitHub
+app.post('/api/learnings-manifest', requireBridgeAuth, async (req, res) => {
   try {
     const newLearnings = req.body;
     if (!newLearnings || typeof newLearnings !== 'object') {
