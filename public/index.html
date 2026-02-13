@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCC ZENITH Brain â Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 2rem; text-align: center; border-bottom: 2px solid #0f3460; }
+        .header h1 { font-size: 2.2rem; color: #e94560; letter-spacing: 3px; text-transform: uppercase; }
+        .header p { color: #8892b0; margin-top: 0.5rem; font-size: 0.95rem; }
+        .container { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 2rem 0; }
+        .status-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 1.5rem; transition: border-color 0.3s; }
+        .status-card:hover { border-color: #e94560; }
+        .status-card h3 { color: #e94560; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.8rem; }
+        .status-card .value { font-size: 1.8rem; font-weight: 700; color: #fff; }
+        .status-card .detail { color: #8892b0; font-size: 0.85rem; margin-top: 0.3rem; }
+        .section { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; }
+        .section h2 { color: #e94560; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 1rem; border-bottom: 1px solid #2a2a4a; padding-bottom: 0.5rem; }
+        .endpoint { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #1e1e3a; }
+        .endpoint:last-child { border-bottom: none; }
+        .endpoint .method { font-weight: 700; font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 4px; }
+        .method.get { background: #1b5e20; color: #69f0ae; }
+        .method.post { background: #4a148c; color: #ce93d8; }
+        .endpoint .path { color: #ccd6f6; font-family: 'Fira Code', monospace; font-size: 0.9rem; }
+        .endpoint .auth { color: #ffd54f; font-size: 0.75rem; }
+        .soul-check { text-align: center; margin: 2rem 0; }
+        .soul-input { background: #16213e; border: 1px solid #2a2a4a; color: #e0e0e0; padding: 0.8rem 1.2rem; border-radius: 8px; font-size: 1rem; width: 100%; max-width: 400px; }
+        .soul-btn { background: #e94560; color: #fff; border: none; padding: 0.8rem 2rem; border-radius: 8px; font-size: 1rem; cursor: pointer; margin-top: 0.8rem; font-weight: 600; letter-spacing: 1px; }
+        .soul-btn:hover { background: #c81d40; }
+        #soul-result { margin-top: 1rem; font-family: monospace; font-size: 0.85rem; }
+        .footer { text-align: center; padding: 2rem; color: #4a4a6a; font-size: 0.8rem; }
+        .pulse { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #69f0ae; animation: pulse 2s infinite; margin-right: 0.5rem; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>&#x2726; ZENITH Brain &#x2726;</h1>
+        <p>TCC Sovereign Intelligence â Autonomous AI Backend</p>
+    </div>
+
+    <div class="container">
+        <div class="status-grid">
+            <div class="status-card">
+                <h3>System Status</h3>
+                <div class="value"><span class="pulse"></span>Online</div>
+                <div class="detail" id="uptime">Loading...</div>
+            </div>
+            <div class="status-card">
+                <h3>Architecture</h3>
+                <div class="value">v5.2.0</div>
+                <div class="detail">Soul-Authenticated Sovereign Mode</div>
+            </div>
+            <div class="status-card">
+                <h3>Memory</h3>
+                <div class="value">Persistent</div>
+                <div class="detail">GitHub-backed with in-memory cache</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Soul Check Authentication</h2>
+            <div class="soul-check">
+                <input type="password" class="soul-input" id="soul-phrase" placeholder="Enter sovereign phrase..." />
+                <br/>
+                <button class="soul-btn" onclick="verifySoul()">VERIFY IDENTITY</button>
+                <div id="soul-result"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>API Endpoints</h2>
+            <div class="endpoint"><span class="method post">POST</span><span class="path">/api/soul</span><span class="auth">public</span></div>
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/api/soul/validate</span><span class="auth">public</span></div>
+            <div class="endpoint"><span class="method post">POST</span><span class="path">/api/chat</span><span class="auth">soul-gated</span></div>
+            <div class="endpoint"><span class="method post">POST</span><span class="path">/api/command</span><span class="auth">soul-gated</span></div>
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/api/mission</span><span class="auth">soul-gated</span></div>
+            <div class="endpoint"><span class="method post">POST</span><span class="path">/api/mission</span><span class="auth">soul-gated</span></div>
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/api/health</span><span class="auth">bridge-auth</span></div>
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/api/memory-manifest</span><span class="auth">bridge-auth</span></div>
+            <div class="endpoint"><span class="method get">GET</span><span class="path">/api/system</span><span class="auth">public</span></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        TCC ZENITH Brain &mdash; Sovereign AI Infrastructure &mdash; &copy; 2026
+    </div>
+
+    <script>
+        async function verifySoul() {
+            const phrase = document.getElementById('soul-phrase').value;
+            const resultEl = document.getElementById('soul-result');
+            try {
+                const resp = await fetch('/api/soul', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phrase })
+                });
+                const data = await resp.json();
+                if (data.authenticated) {
+                    resultEl.innerHTML = '<span style="color:#69f0ae">&#x2713; SOVEREIGN IDENTITY CONFIRMED</span><br/>Token: ' + data.token.substring(0, 20) + '...';
+                } else {
+                    resultEl.innerHTML = '<span style="color:#e94560">&#x2717; ' + (data.error || 'DENIED') + '</span>';
+                }
+            } catch (e) {
+                resultEl.innerHTML = '<span style="color:#e94560">Error: ' + e.message + '</span>';
+            }
+        }
+
+        // Check system status
+        fetch('/api/system').then(r => r.json()).then(data => {
+            document.getElementById('uptime').textContent = 'Uptime: ' + Math.floor(data.uptime || 0) + 's';
+        }).catch(() => {
+            document.getElementById('uptime').textContent = 'Checking...';
+        });
+    </script>
+</body>
+</html>
