@@ -16,11 +16,17 @@
         "event": "learnings-manifest restored",
         "result": "pending_verification",
         "timestamp": "2026-02-13T07:12:34Z"
+      },
+      {
+        "details": "POST /api/learnings-manifest and POST /api/memory-manifest now set _loadStatus='ok' and _loadedAt after successful restore. Previously only cold-start set these, causing /api/health to report 'unknown' after any POST restore.",
+        "event": "loadStatus bug fixed via self-update",
+        "result": "verified",
+        "timestamp": "2026-02-13T07:25:08.335Z"
       }
     ],
     "startup_errors": []
   },
   "status": "active",
   "version": "2.0.0",
-  "last_updated": "2026-02-13T07:12:54.192Z"
+  "last_updated": "2026-02-13T07:25:12.408Z"
 }
