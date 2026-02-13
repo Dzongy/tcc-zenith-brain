@@ -1,0 +1,22 @@
+name: ZENITH Autonomous Cron
+
+on:
+  schedule:
+    # Every 12 hours
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+    # Manual trigger for testing
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fire autonomous tick
+        run: |
+          curl -s -X POST \
+            https://tcc-zenith-brain.onrender.com/api/autonomous/tick \
+            -H "Content-Type: application/json" \
+            -H "X-Auth: amos-bridge-2026" \
+            -d '{}' \
+            --max-time 30
