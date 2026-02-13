@@ -303,7 +303,7 @@ CRITICAL: Always answer the user's question directly. Provide real information. 
 // ============================================
 // SOUL CHECK ENDPOINT
 // ============================================
-app.post('/api/soul', (req, res) => {
+app.post('/api/soul', requireBridgeAuth, (req, res) => {
   try {
     const { phrase } = req.body || {};
     if (!phrase) {
@@ -1758,7 +1758,7 @@ const missions = [];
 
 // POST /api/command ÃÂ¢ÃÂÃÂ Soul-gated command interface
 // Accepts either { command, source } (simple) or { action, params } (dispatch)
-app.post('/api/command', requireSoul, async (req, res) => {
+app.post('/api/command', requireBridgeAuth, requireSoul, async (req, res) => {
   try {
     const { command, source, action, params } = req.body || {};
     const timestamp = Date.now();
@@ -1803,12 +1803,12 @@ app.post('/api/command', requireSoul, async (req, res) => {
 });
 
 // GET /api/mission ÃÂ¢ÃÂÃÂ Returns current active missions (soul-gated)
-app.get('/api/mission', requireSoul, (req, res) => {
+app.get('/api/missions', requireBridgeAuth, requireSoul, (req, res) => {
   res.json({ missions, count: missions.length, timestamp: new Date().toISOString() });
 });
 
 // POST /api/mission ÃÂ¢ÃÂÃÂ Add a new mission (soul-gated)
-app.post('/api/mission', requireSoul, (req, res) => {
+app.post('/api/missions', requireBridgeAuth, requireSoul, (req, res) => {
   try {
     const title = req.body.title || req.body.name || null;
     const objective = req.body.objective || null;
