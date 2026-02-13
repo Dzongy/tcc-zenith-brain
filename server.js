@@ -1832,9 +1832,11 @@ app.get('/api/mission', requireSoul, (req, res) => {
 // POST /api/mission â Add a new mission (soul-gated)
 app.post('/api/mission', requireSoul, (req, res) => {
   try {
+    console.log('[MISSION] Raw body:', JSON.stringify(req.body));
+    console.log('[MISSION] Content-Type:', req.headers['content-type']);
     const { title, objective, status } = req.body || {};
     if (!title || !objective) {
-      return res.status(400).json({ error: 'Missing title or objective' });
+      return res.status(400).json({ error: 'Missing title or objective', debug_body: req.body, debug_keys: Object.keys(req.body || {}) });
     }
     const mission = {
       id: Date.now(),
