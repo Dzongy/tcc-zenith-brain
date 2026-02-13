@@ -518,6 +518,73 @@ app.get('/api/zenith/autopilot', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// --- Autopilot Loop (Groq AI) ---
+const autopilotLog = [];
+
+app.post('/api/zenith/autopilot', async (req, res) => {
+  try {
+    const groqKey = process.env.GROK_API_KEY;
+    if (!groqKey) return res.status(503).json({ error: 'GROK_API_KEY not configured' });
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are the TCC ZENITH autopilot. Generate a short, engaging tweet about AI automation for small businesses. Be witty, direct, slightly cosmic. Include a call to action. Max 280 chars.' },
+          { role: 'user', content: 'Generate a tweet for this cycle.' }
+        ],
+        max_tokens: 100
+      })
+    });
+    const data = await response.json();
+    const content = data.choices && data.choices[0] ? data.choices[0].message.content : 'No content generated';
+    const entry = { timestamp: new Date().toISOString(), content, status: 'success', source: 'manual' };
+    autopilotLog.push(entry);
+    res.json({ cycle: entry, total_cycles: autopilotLog.length });
+  } catch (err) {
+    const entry = { timestamp: new Date().toISOString(), content: null, status: 'error', error: err.message, source: 'manual' };
+    autopilotLog.push(entry);
+    res.status(500).json({ error: err.message, cycle: entry });
+  }
+});
+
+app.get('/api/zenith/autopilot/history', (req, res) => {
+  res.json({ total_cycles: autopilotLog.length, log: autopilotLog.slice(-50) });
+});
+
+// --- 4hr Autopilot Cron ---
+async function runAutopilotCycle() {
+  try {
+    const groqKey = process.env.GROK_API_KEY;
+    if (!groqKey) { console.log('[AUTOPILOT] No GROK_API_KEY set, skipping cycle'); return; }
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are the TCC ZENITH autopilot. Generate a short, engaging tweet about AI automation for small businesses. Be witty, direct, slightly cosmic. Include a call to action. Max 280 chars.' },
+          { role: 'user', content: 'Generate a tweet for this cycle.' }
+        ],
+        max_tokens: 100
+      })
+    });
+    const data = await response.json();
+    const content = data.choices && data.choices[0] ? data.choices[0].message.content : 'No content generated';
+    const entry = { timestamp: new Date().toISOString(), content, status: 'success', source: 'cron-4hr' };
+    autopilotLog.push(entry);
+    console.log('[AUTOPILOT CRON]', entry.timestamp, content);
+  } catch (err) {
+    const entry = { timestamp: new Date().toISOString(), content: null, status: 'error', error: err.message, source: 'cron-4hr' };
+    autopilotLog.push(entry);
+    console.error('[AUTOPILOT CRON ERROR]', err.message);
+  }
+}
+setTimeout(() => { runAutopilotCycle(); }, 60000);
+setInterval(() => { runAutopilotCycle(); }, 4 * 60 * 60 * 1000);
+
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
 });
