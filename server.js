@@ -7,6 +7,16 @@ const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STR
 
 
 const app = express();
+// --- System State (in-memory) ---
+const systemState = {
+  startTime: Date.now(),
+  totalPayments: 0,
+  totalRevenue: 0,
+  lastPayment: null,
+  recentPayments: [],
+  soulCheckStats: { attempts: 0, successes: 0, failures: 0 },
+  healthChecks: null
+};
 // --- Stripe Webhook (raw body, before JSON parser) ---
 app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
@@ -336,6 +346,177 @@ app.get('/api/zenith/status', (req, res) => {
   }
 });
 
+
+// ============================================
+// --- AUTOPILOT ENGINE (Pillar 4: Revenue) ---
+// ============================================
+const autopilotState = {
+  rotationCounter: 0,
+  totalRuns: 0,
+  lastRun: null,
+  lastPhase: null,
+  actions: [],
+  errors: []
+};
+
+// Helper: call Grok API
+async function callGrok(prompt) {
+  const key = process.env.GROK_API_KEY;
+  if (!key) return { error: 'GROK_API_KEY not set' };
+  try {
+    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'grok-3-mini',
+        messages: [
+          { role: 'system', content: 'You are the outreach strategist for The Cosmic Claw (TCC) - a sovereign AI automation company. Brand voice: witty, cosmic, genuine. Jeremy (founder) built his own AI business system from scratch. The checkout link is https://buy.stripe.com/14AdR27X6f603ti0BC4wM0P ($97 AI Business System). Craft authentic engagement - never spam. Use the lobster emoji sparingly.' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 500,
+        temperature: 0.8
+      })
+    });
+    const data = await res.json();
+    return { content: data.choices?.[0]?.message?.content || 'No response', model: data.model };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+// Helper: search X for leads
+async function searchXLeads(query) {
+  const bearer = process.env.X_BEARER_TOKEN;
+  if (!bearer) return { error: 'X_BEARER_TOKEN not set' };
+  try {
+    const url = 'https://api.twitter.com/2/tweets/search/recent?query=' + encodeURIComponent(query) + '&max_results=10&tweet.fields=author_id,created_at,public_metrics';
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + bearer }
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+// Helper: internal Stripe status check
+async function checkStripeInternal() {
+  try {
+    const https = require('https');
+    return new Promise((resolve) => {
+      const opts = {
+        hostname: 'tcc-zenith-brain.onrender.com',
+        path: '/api/stripe/status',
+        method: 'GET',
+        headers: { 'X-Auth': 'amos-bridge-2026' }
+      };
+      const req = https.request(opts, (res) => {
+        let d = '';
+        res.on('data', (c) => { d += c; });
+        res.on('end', () => { resolve({ statusCode: res.statusCode, body: d }); });
+      });
+      req.on('error', (e) => { resolve({ error: e.message }); });
+      req.end();
+    });
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+// --- Main autopilot cycle ---
+async function runAutopilotCycle() {
+  const phase = autopilotState.rotationCounter % 3; // 0=search, 1=engage, 2=monitor
+  const phaseNames = ['search', 'engage', 'monitor'];
+  const phaseName = phaseNames[phase];
+  const cycleLog = { phase: phaseName, startedAt: new Date().toISOString(), actions: [] };
+
+  try {
+    if (phase === 0) {
+      // SEARCH phase: Find warm leads on X
+      const queries = [
+        'AI automation small business -is:retweet',
+        'AI agent for business help -is:retweet',
+        'need AI chatbot business -is:retweet',
+        'automate my business AI -is:retweet'
+      ];
+      const q = queries[autopilotState.totalRuns % queries.length];
+      const leads = await searchXLeads(q);
+      const leadCount = leads.data ? leads.data.length : 0;
+      cycleLog.actions.push({ action: 'x_search', query: q, resultsFound: leadCount });
+
+      // Ask Grok to analyze the leads
+      if (leadCount > 0) {
+        const leadTexts = leads.data.slice(0, 5).map(t => t.text || t.id).join(' | ');
+        const analysis = await callGrok('Analyze these tweets from people discussing AI for business. Identify the 2 best warm leads to engage with authentically. Tweets: ' + leadTexts);
+        cycleLog.actions.push({ action: 'grok_analysis', result: analysis.content ? analysis.content.substring(0, 300) : analysis.error });
+      }
+
+    } else if (phase === 1) {
+      // ENGAGE phase: Generate outreach copy
+      const strategy = await callGrok('Generate 3 unique, warm, non-spammy reply templates for engaging with people on X who are discussing AI automation for their small business. Each reply should be 1-2 sentences, genuine, mention that we built our own AI business system, and subtly reference The Cosmic Claw without being salesy. Do NOT include links in replies - only in follow-up DMs.');
+      cycleLog.actions.push({ action: 'grok_outreach_copy', templates: strategy.content ? strategy.content.substring(0, 500) : strategy.error });
+
+      // Generate a DM template
+      const dm = await callGrok('Write one warm DM template for following up with someone who showed interest in AI automation. Mention the $97 AI Business System, include checkout link https://buy.stripe.com/14AdR27X6f603ti0BC4wM0P, and keep it under 280 chars. Jeremy built this himself - that is the story.');
+      cycleLog.actions.push({ action: 'grok_dm_template', template: dm.content ? dm.content.substring(0, 300) : dm.error });
+
+    } else {
+      // MONITOR phase: Check revenue pipeline
+      const stripeStatus = await checkStripeInternal();
+      cycleLog.actions.push({ action: 'stripe_check', result: stripeStatus.statusCode || stripeStatus.error });
+
+      // Ask Grok for strategy adjustment
+      const adjust = await callGrok('Based on running an AI business outreach campaign on X for The Cosmic Claw, suggest one tactical adjustment for this week. Focus on what is working in AI SaaS sales right now. Be specific and actionable.');
+      cycleLog.actions.push({ action: 'grok_strategy_adjust', suggestion: adjust.content ? adjust.content.substring(0, 300) : adjust.error });
+    }
+  } catch (err) {
+    cycleLog.actions.push({ action: 'error', message: err.message });
+    autopilotState.errors.push({ phase: phaseName, error: err.message, at: new Date().toISOString() });
+  }
+
+  // Update state
+  autopilotState.rotationCounter++;
+  autopilotState.totalRuns++;
+  autopilotState.lastRun = new Date().toISOString();
+  autopilotState.lastPhase = phaseName;
+  autopilotState.actions.push(cycleLog);
+  if (autopilotState.actions.length > 50) autopilotState.actions = autopilotState.actions.slice(-25);
+  if (autopilotState.errors.length > 20) autopilotState.errors = autopilotState.errors.slice(-10);
+
+  return cycleLog;
+}
+
+// --- GET /api/zenith/autopilot ---
+app.get('/api/zenith/autopilot', async (req, res) => {
+  try {
+    console.log('[AUTOPILOT] Cycle triggered - rotation #' + autopilotState.rotationCounter);
+    const result = await runAutopilotCycle();
+    console.log('[AUTOPILOT] Cycle complete - phase:', result.phase, 'actions:', result.actions.length);
+    res.json({
+      system: 'ZENITH Autopilot',
+      version: 'v1.0',
+      cycle: result,
+      state: {
+        totalRuns: autopilotState.totalRuns,
+        rotationCounter: autopilotState.rotationCounter,
+        lastPhase: autopilotState.lastPhase,
+        lastRun: autopilotState.lastRun,
+        recentErrors: autopilotState.errors.slice(-3)
+      },
+      envStatus: {
+        grokKey: !!process.env.GROK_API_KEY,
+        xBearer: !!process.env.X_BEARER_TOKEN,
+        stripeKey: !!process.env.STRIPE_SECRET_KEY
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[AUTOPILOT] Fatal error:', err.message);
+    res.status(500).json({ error: err.message, timestamp: new Date().toISOString() });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
@@ -382,3 +563,24 @@ setInterval(() => {
   req.end();
 }, 21600000);
 
+
+// --- AUTOPILOT CRON: 4-hour self-invoking cycle ---
+setInterval(() => {
+  const https = require('https');
+  const options = {
+    hostname: 'tcc-zenith-brain.onrender.com',
+    path: '/api/zenith/autopilot',
+    method: 'GET'
+  };
+  const req = https.request(options, (res) => {
+    let data = '';
+    res.on('data', (chunk) => { data += chunk; });
+    res.on('end', () => {
+      console.log('[AUTOPILOT-CRON] 4h cycle:', res.statusCode);
+    });
+  });
+  req.on('error', (err) => {
+    console.log('[AUTOPILOT-CRON] 4h cycle failed:', err.message);
+  });
+  req.end();
+}, 14400000);
