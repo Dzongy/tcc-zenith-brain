@@ -74,16 +74,25 @@ function requireSoul(req, res, next) {
   next();
 }
 
-// --- POST /api/soul --- (X-Auth required, no soul token needed)
+// --- POST /api/soul --- (3-stage Soul Check)
 app.post('/api/soul', (req, res) => {
-  const { phrase } = req.body || {};
-  const expectedPhrase = process.env.SOUL_PHRASE || 'ARCHITECTDZONGYZENITH';
-  if (phrase && phrase.trim() === expectedPhrase.trim()) {
-    const token = crypto.randomBytes(32).toString('hex');
-    soulTokens.add(token);
-    return res.json({ authenticated: true, token });
+  // Stage 1: X-Soul-Token header must equal secret
+  const token = req.headers['x-soul-token'];
+  if (token !== 'ARCHITECTDZONGYZENITH') {
+    return res.status(403).json({ verified: false, error: 'Invalid soul token' });
   }
-  return res.status(403).json({ authenticated: false, error: 'Wrong phrase' });
+  // Stage 2: Body must include soul: "cosmic-claw"
+  const { soul } = req.body || {};
+  if (soul !== 'cosmic-claw') {
+    return res.status(401).json({ verified: false, error: 'Soul field mismatch' });
+  }
+  // Stage 3: Return verification payload
+  return res.json({
+    verified: true,
+    entity: 'ZENITH',
+    phase: 'P2',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // --- GET /api/status (X-Auth protected) ---
@@ -205,6 +214,25 @@ app.get('/api/stripe/customer/:customerId', requireXAuth, async (req, res) => {
   }
 });
 
+// POST /api/stripe/checkout (creates Stripe checkout session)
+app.post('/api/stripe/checkout', requireXAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const { priceId, successUrl, cancelUrl } = req.body || {};
+  if (!priceId) return res.status(400).json({ error: 'priceId required' });
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl || 'https://dzongy.github.io/tcc-sovereignty-lite/?success=true',
+      cancel_url: cancelUrl || 'https://dzongy.github.io/tcc-sovereignty-lite/?canceled=true',
+    });
+    res.json({ sessionId: session.id, url: session.url });
+  } catch (err) {
+    console.error('Stripe checkout error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/stripe/status
 app.get('/api/stripe/status', requireXAuth, (req, res) => {
   res.json({
@@ -237,3 +265,26 @@ setInterval(() => {
   });
   req.end();
 }, 780000);
+
+// --- AUTONOMY SEED: 6-hour health cron ---
+setInterval(() => {
+  const https = require('https');
+  const options = {
+    hostname: 'tcc-zenith-brain.onrender.com',
+    path: '/api/stripe/status',
+    method: 'GET',
+    headers: { 'X-Auth': 'amos-bridge-2026' }
+  };
+  const req = https.request(options, (res) => {
+    let data = '';
+    res.on('data', (chunk) => { data += chunk; });
+    res.on('end', () => {
+      console.log('[HEALTH-CRON] 6h check /api/stripe/status:', res.statusCode, data);
+    });
+  });
+  req.on('error', (err) => {
+    console.log('[HEALTH-CRON] 6h check failed:', err.message);
+  });
+  req.end();
+}, 21600000);
+
