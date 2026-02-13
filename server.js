@@ -1923,6 +1923,77 @@ app.post('/api/command', async (req, res) => {
 });
 
 
+
+
+// ============================================================
+// PILLAR 6: COMMAND LAYER — /api/command
+// Unified command interface for ZENITH Brain operations
+// ============================================================
+const thoughtLog = [];
+
+app.post('/api/command', (req, res) => {
+  const authHeader = req.headers['x-auth'];
+  if (authHeader !== 'amos-bridge-2026') {
+    return res.status(403).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const { action, params } = req.body || {};
+  if (!action) {
+    return res.status(400).json({ success: false, error: 'Missing action field' });
+  }
+
+  let result;
+  const timestamp = new Date().toISOString();
+
+  switch (action) {
+    case 'health_check':
+      result = {
+        status: 'alive',
+        uptime: process.uptime(),
+        memory: process.memoryUsage()
+      };
+      break;
+
+    case 'log_thought':
+      if (!params || !params.category || !params.content) {
+        return res.json({ success: false, error: 'log_thought requires params.category and params.content', timestamp });
+      }
+      const thought = { category: params.category, content: params.content, logged_at: timestamp };
+      thoughtLog.push(thought);
+      result = { logged: true, thought, total_thoughts: thoughtLog.length };
+      break;
+
+    case 'get_learnings':
+      result = typeof learningsManifest !== 'undefined' ? learningsManifest : { note: 'learningsManifest not loaded' };
+      break;
+
+    case 'get_thoughts':
+      result = { thoughts: thoughtLog, count: thoughtLog.length };
+      break;
+
+    case 'status':
+      result = {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: 'ZENITH Brain v2 + Command Layer',
+        endpoints: ['/api/command', '/api/chat', '/api/soul', '/api/health', '/api/memory-manifest', '/api/learnings-manifest', '/api/system', '/api/autonomy', '/api/autonomy/tick', '/api/learnings'],
+        thoughtCount: thoughtLog.length,
+        learningCount: typeof learningsManifest !== 'undefined' && learningsManifest.categories ? Object.values(learningsManifest.categories).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0
+      };
+      break;
+
+    default:
+      return res.json({
+        success: false,
+        error: 'Unknown action',
+        available_actions: ['health_check', 'log_thought', 'get_learnings', 'get_thoughts', 'status'],
+        timestamp
+      });
+  }
+
+  res.json({ success: true, action, result, timestamp });
+});
+
 app.listen(PORT, async () => {
   console.log(`\n=== ZENITH v5.2.0 \u2014 SOUL AUTHENTICATED \u2014 SOVEREIGN MODE ===`);
   console.log(`Port: ${PORT}`);
