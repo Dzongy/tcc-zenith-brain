@@ -270,45 +270,70 @@ app.get('/api/stripe/status', requireXAuth, (req, res) => {
 
 // --- ZENITH Unified Status Dashboard ---
 app.get('/api/zenith/status', (req, res) => {
-  const now = Date.now();
-  const uptimeMs = now - systemState.startTime;
-  const uptimeHours = (uptimeMs / 3600000).toFixed(2);
-  const uptimeDays = (uptimeMs / 86400000).toFixed(3);
-  
-  // Health check self-test
-  const healthResult = {
-    stripe: !!stripe && !!process.env.STRIPE_SECRET_KEY,
-    webhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_WEBHOOK_SECRET !== 'placeholder',
-    soulPhrase: !!process.env.SOUL_PHRASE,
-    openai: !!process.env.OPENAI_API_KEY,
-    github: !!process.env.GITHUB_TOKEN
-  };
-  systemState.healthChecks = { lastCheck: new Date().toISOString(), status: Object.values(healthResult).every(v => v) ? 'all_green' : 'degraded', details: healthResult };
+  try {
+    const now = Date.now();
+    const startTime = (systemState && systemState.startTime) ? systemState.startTime : now;
+    const uptimeMs = now - startTime;
+    const uptimeHours = (uptimeMs / 3600000).toFixed(2);
+    const uptimeDays = (uptimeMs / 86400000).toFixed(3);
 
-  res.json({
-    system: 'ZENITH Brain',
-    version: 'v2.1-autonomous',
-    mode: 'sovereign',
-    uptime: { ms: uptimeMs, hours: parseFloat(uptimeHours), days: parseFloat(uptimeDays) },
-    payments: {
-      totalPayments: systemState.totalPayments,
-      totalRevenue: systemState.totalRevenue,
-      lastPayment: systemState.lastPayment,
-      recentCount: systemState.recentPayments.length
-    },
-    health: systemState.healthChecks,
-    soulCheck: {
-      active: !!process.env.SOUL_PHRASE,
-      stats: systemState.soulCheckStats,
-      activeTokens: soulTokens.size
-    },
-    autonomy: {
-      tasksCompleted: completedTasks ? completedTasks.length : 0,
-      tasksPending: taskQueue ? taskQueue.length : 0,
-      learnings: memory?.learnings?.length || 0
-    },
-    timestamp: new Date().toISOString()
-  });
+    // Defensive reads with fallbacks
+    const totalPayments = (systemState && typeof systemState.totalPayments === 'number') ? systemState.totalPayments : 0;
+    const totalRevenue = (systemState && typeof systemState.totalRevenue === 'number') ? systemState.totalRevenue : 0;
+    const lastPayment = (systemState && systemState.lastPayment) ? systemState.lastPayment : null;
+    const recentPayments = (systemState && Array.isArray(systemState.recentPayments)) ? systemState.recentPayments : [];
+    const soulCheckStats = (systemState && systemState.soulCheckStats) ? systemState.soulCheckStats : { attempts: 0, successes: 0, failures: 0 };
+    const pendingTasks = (typeof taskQueue !== 'undefined' && Array.isArray(taskQueue)) ? taskQueue.length : 0;
+    const completedCount = (typeof completedTasks !== 'undefined' && Array.isArray(completedTasks)) ? completedTasks.length : 0;
+    const learningsCount = (typeof memory !== 'undefined' && memory && Array.isArray(memory.learnings)) ? memory.learnings.length : 0;
+    const tokenCount = (typeof soulTokens !== 'undefined' && soulTokens && typeof soulTokens.size === 'number') ? soulTokens.size : 0;
+
+    // Health check
+    const healthResult = {
+      stripe: !!stripe && !!process.env.STRIPE_SECRET_KEY,
+      webhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_WEBHOOK_SECRET !== 'placeholder',
+      soulPhrase: !!process.env.SOUL_PHRASE,
+      openai: !!process.env.OPENAI_API_KEY,
+      github: !!process.env.GITHUB_TOKEN
+    };
+    if (systemState) {
+      systemState.healthChecks = { lastCheck: new Date().toISOString(), status: Object.values(healthResult).every(function(v) { return v; }) ? 'all_green' : 'degraded', details: healthResult };
+    }
+
+    res.json({
+      system: 'ZENITH Brain',
+      version: 'v2.2-bulletproof',
+      mode: 'sovereign',
+      uptime: { ms: uptimeMs, hours: parseFloat(uptimeHours), days: parseFloat(uptimeDays) },
+      payments: {
+        totalPayments: totalPayments,
+        totalRevenue: totalRevenue,
+        lastPayment: lastPayment,
+        recentCount: recentPayments.length
+      },
+      health: (systemState && systemState.healthChecks) ? systemState.healthChecks : healthResult,
+      soulCheck: {
+        active: !!process.env.SOUL_PHRASE,
+        stats: soulCheckStats,
+        activeTokens: tokenCount
+      },
+      autonomy: {
+        tasksCompleted: completedCount,
+        tasksPending: pendingTasks,
+        learnings: learningsCount
+      },
+      endpoints: 15,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('ZENITH status error:', err.message);
+    res.status(500).json({
+      system: 'ZENITH Brain',
+      version: 'v2.2-bulletproof',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
