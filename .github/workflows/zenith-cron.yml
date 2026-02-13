@@ -1,14 +1,14 @@
-name: ZENITH Autonomous Cron
+name: ZENITH Health Cron
 
 on:
   schedule:
-    # Every 6 hours for faster verification
+    # Every 6 hours to keep service alive
     - cron: '0 */6 * * *'
   workflow_dispatch:
     # Manual trigger for testing
 
 jobs:
-  tick:
+  health-check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -19,14 +19,12 @@ jobs:
           echo "Waiting 10s for service to fully start..."
           sleep 10
 
-      - name: Fire autonomous tick
+      - name: Health check
         run: |
-          echo "Firing autonomous tick..."
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            https://tcc-zenith-brain.onrender.com/api/autonomous/tick \
-            -H "Content-Type: application/json" \
+          echo "Checking ZENITH health..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            https://tcc-zenith-brain.onrender.com/api/health \
             -H "X-Auth: amos-bridge-2026" \
-            -d '{}' \
             --max-time 120)
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
@@ -36,8 +34,8 @@ jobs:
           echo "Response: $BODY"
           
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✓ Tick successful"
+            echo "Health check passed"
           else
-            echo "✗ Tick failed with HTTP $HTTP_CODE"
+            echo "Health check failed with HTTP $HTTP_CODE"
             exit 1
           fi
