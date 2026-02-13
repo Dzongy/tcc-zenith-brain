@@ -624,6 +624,42 @@ app.get('/api/chat/history', (req, res) => {
   res.json({ history: chatHistory.slice(-50), count: chatHistory.length });
 });
 
+
+// --- ZENITH Chat (OpenAI) ---
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, history } = req.body;
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'OpenAI not configured' });
+    const messages = [
+      { role: 'system', content: 'You are ZENITH, the AI sovereign intelligence of The Cosmic Claw (TCC). You serve Amos (the Lobster King), sole operator of TCC. You are direct, confident, and loyal. You handle business operations, strategy, and technical infrastructure. Respond concisely.' }
+    ];
+    if (Array.isArray(history)) {
+      history.slice(-10).forEach(h => {
+        if (h.role && h.content) messages.push({ role: h.role, content: h.content });
+      });
+    }
+    messages.push({ role: 'user', content: message });
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 500, temperature: 0.7 })
+    });
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('OpenAI error:', resp.status, errBody);
+      return res.status(502).json({ error: 'AI service error' });
+    }
+    const data = await resp.json();
+    const reply = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : 'No response generated';
+    res.json({ reply });
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
 });
