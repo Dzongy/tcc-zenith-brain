@@ -4,17 +4,16 @@ const path = require('path');
 const crypto = require('crypto');
 
 const app = express();
+
+// Parse JSON bodies
 app.use(bodyParser.json());
 
 // Serve static files BEFORE routes
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
-// --- Auth stores ---
-const soulTokens = new Set();
-const missions = [];
-const commands = [];
+// ============ AUTH ============
 
-// --- Middleware: X-Auth ---
+// X-Auth middleware
 function requireXAuth(req, res, next) {
   const auth = req.headers['x-auth'];
   if (!auth || auth !== 'amos-bridge-2026') {
@@ -23,7 +22,21 @@ function requireXAuth(req, res, next) {
   next();
 }
 
-// --- Middleware: Soul Token ---
+// Soul token store
+const soulTokens = new Set();
+
+// POST /api/soul - authenticate with sovereign phrase
+app.post('/api/soul', (req, res) => {
+  const { phrase } = req.body || {};
+  if (phrase === 'I am the lobster who dreams of stars') {
+    const token = crypto.randomBytes(32).toString('hex');
+    soulTokens.add(token);
+    return res.json({ authenticated: true, token });
+  }
+  return res.status(403).json({ authenticated: false, error: 'Invalid phrase' });
+});
+
+// Soul token middleware
 function requireSoul(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -36,18 +49,13 @@ function requireSoul(req, res, next) {
   next();
 }
 
-// --- POST /api/soul ---
-app.post('/api/soul', (req, res) => {
-  const { phrase } = req.body || {};
-  if (phrase === 'I am the lobster who dreams of stars') {
-    const token = crypto.randomBytes(32).toString('hex');
-    soulTokens.add(token);
-    return res.json({ authenticated: true, token });
-  }
-  return res.status(403).json({ authenticated: false, error: 'Wrong phrase' });
-});
+// ============ DATA STORES ============
+const missions = [];
+const commands = [];
 
-// --- GET /api/status (X-Auth protected) ---
+// ============ ROUTES ============
+
+// GET /api/status - protected by X-Auth
 app.get('/api/status', requireXAuth, (req, res) => {
   res.json({
     status: 'online',
@@ -57,7 +65,7 @@ app.get('/api/status', requireXAuth, (req, res) => {
   });
 });
 
-// --- POST /api/mission (Soul protected) ---
+// POST /api/mission - protected by Soul
 app.post('/api/mission', requireSoul, (req, res) => {
   const { title, objective, status } = req.body || {};
   const mission = {
@@ -71,31 +79,31 @@ app.post('/api/mission', requireSoul, (req, res) => {
   res.json(mission);
 });
 
-// --- GET /api/mission (X-Auth protected) ---
+// GET /api/mission - protected by X-Auth
 app.get('/api/mission', requireXAuth, (req, res) => {
   res.json(missions);
 });
 
-// --- POST /api/command (Soul protected) ---
+// POST /api/command - protected by Soul
 app.post('/api/command', requireSoul, (req, res) => {
   const { command, source } = req.body || {};
-  const id = Date.now();
   const entry = {
-    id,
+    id: Date.now(),
     command: command || '',
     source: source || 'unknown',
-    created: new Date().toISOString()
+    received: true,
+    timestamp: new Date().toISOString()
   };
   commands.push(entry);
-  res.json({ received: true, id });
+  res.json({ received: true, id: entry.id });
 });
 
-// --- GET /api/command (X-Auth protected) ---
+// GET /api/command - protected by X-Auth
 app.get('/api/command', requireXAuth, (req, res) => {
   res.json(commands);
 });
 
-// --- Start server ---
+// ============ START ============
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
