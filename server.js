@@ -37,9 +37,10 @@ function requireSoul(req, res, next) {
 }
 
 // --- POST /api/soul --- (X-Auth required, no soul token needed)
-app.post('/api/soul', requireXAuth, (req, res) => {
+app.post('/api/soul', (req, res) => {
   const { phrase } = req.body || {};
-  if (phrase === 'ARCHITECTDZONGYZENITH') {
+  const expectedPhrase = process.env.SOUL_PHRASE || 'ARCHITECTDZONGYZENITH';
+  if (phrase && phrase.trim() === expectedPhrase.trim()) {
     const token = crypto.randomBytes(32).toString('hex');
     soulTokens.add(token);
     return res.json({ authenticated: true, token });
