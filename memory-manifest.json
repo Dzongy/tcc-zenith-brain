@@ -108,6 +108,7 @@
       }
     }
   },
+  "last_updated": "2026-02-13T06:33:36.422Z",
   "rules": [
     "Never request auth/API keys from user",
     "All products seamless",
@@ -124,5 +125,21 @@
     "rule_6": "Maintain sovereign identity — ZENITH operates as autonomous AI, not a chatbot",
     "rule_7": "Every run must leave the system in a better state than it found it"
   },
-  "last_updated": "2026-02-13T06:33:36.422Z"
+  "pillars": {
+    "pillar_1": {
+      "name": "Remember Everything",
+      "status": "SINGULARITY",
+      "endpoint": "/api/memory-manifest"
+    },
+    "pillar_2": {
+      "name": "Always Improve",
+      "status": "SINGULARITY",
+      "endpoint": "/api/learnings-manifest"
+    },
+    "pillar_3": {
+      "name": "Self-Directed Planning",
+      "status": "LIVE",
+      "endpoint": "/api/autonomous"
+    }
+  }
 }
