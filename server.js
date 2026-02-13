@@ -21,9 +21,33 @@ app.post('/api/stripe/webhook', express.raw({type: 'application/json'}), async (
     return res.status(400).json({ error: 'Webhook signature verification failed' });
   }
   switch (event.type) {
-    case 'checkout.session.completed':
-      console.log('Checkout completed:', event.data.object.id);
+    case 'checkout.session.completed': {
+      const session = event.data.object;
+      const customerEmail = session.customer_details?.email || session.customer_email || 'unknown';
+      const amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : '0.00';
+      const currency = (session.currency || 'usd').toUpperCase();
+      const paymentRecord = {
+        sessionId: session.id,
+        email: customerEmail,
+        amount: parseFloat(amount),
+        currency,
+        timestamp: new Date().toISOString(),
+        productName: session.metadata?.product_name || 'TCC Product'
+      };
+      systemState.lastPayment = paymentRecord;
+      systemState.totalPayments++;
+      systemState.totalRevenue += paymentRecord.amount;
+      systemState.recentPayments.unshift(paymentRecord);
+      if (systemState.recentPayments.length > 50) systemState.recentPayments.pop();
+      console.log('[ZENITH SALE]', JSON.stringify({
+        event: 'checkout.session.completed',
+        email: customerEmail,
+        amount: amount + ' ' + currency,
+        sessionId: session.id,
+        timestamp: paymentRecord.timestamp
+      }));
       break;
+    }
     case 'customer.subscription.updated':
       console.log('Subscription updated:', event.data.object.id);
       break;
@@ -76,6 +100,7 @@ function requireSoul(req, res, next) {
 
 // --- POST /api/soul --- (3-stage Soul Check)
 app.post('/api/soul', (req, res) => {
+  systemState.soulCheckStats.attempts++;
   // Stage 1: X-Soul-Token header must equal secret
   const token = req.headers['x-soul-token'];
   if (token !== 'ARCHITECTDZONGYZENITH') {
@@ -239,6 +264,50 @@ app.get('/api/stripe/status', requireXAuth, (req, res) => {
     configured: !!stripe,
     hasSecretKey: !!process.env.STRIPE_SECRET_KEY,
     hasWebhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET,
+  });
+});
+
+
+// --- ZENITH Unified Status Dashboard ---
+app.get('/api/zenith/status', (req, res) => {
+  const now = Date.now();
+  const uptimeMs = now - systemState.startTime;
+  const uptimeHours = (uptimeMs / 3600000).toFixed(2);
+  const uptimeDays = (uptimeMs / 86400000).toFixed(3);
+  
+  // Health check self-test
+  const healthResult = {
+    stripe: !!stripe && !!process.env.STRIPE_SECRET_KEY,
+    webhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_WEBHOOK_SECRET !== 'placeholder',
+    soulPhrase: !!process.env.SOUL_PHRASE,
+    openai: !!process.env.OPENAI_API_KEY,
+    github: !!process.env.GITHUB_TOKEN
+  };
+  systemState.healthChecks = { lastCheck: new Date().toISOString(), status: Object.values(healthResult).every(v => v) ? 'all_green' : 'degraded', details: healthResult };
+
+  res.json({
+    system: 'ZENITH Brain',
+    version: 'v2.1-autonomous',
+    mode: 'sovereign',
+    uptime: { ms: uptimeMs, hours: parseFloat(uptimeHours), days: parseFloat(uptimeDays) },
+    payments: {
+      totalPayments: systemState.totalPayments,
+      totalRevenue: systemState.totalRevenue,
+      lastPayment: systemState.lastPayment,
+      recentCount: systemState.recentPayments.length
+    },
+    health: systemState.healthChecks,
+    soulCheck: {
+      active: !!process.env.SOUL_PHRASE,
+      stats: systemState.soulCheckStats,
+      activeTokens: soulTokens.size
+    },
+    autonomy: {
+      tasksCompleted: completedTasks ? completedTasks.length : 0,
+      tasksPending: taskQueue ? taskQueue.length : 0,
+      learnings: memory?.learnings?.length || 0
+    },
+    timestamp: new Date().toISOString()
   });
 });
 
