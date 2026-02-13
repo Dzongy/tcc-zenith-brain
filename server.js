@@ -585,6 +585,45 @@ async function runAutopilotCycle() {
 setTimeout(() => { runAutopilotCycle(); }, 60000);
 setInterval(() => { runAutopilotCycle(); }, 4 * 60 * 60 * 1000);
 
+
+// --- POST /api/chat --- (Public ZENITH chat for Amos)
+const chatHistory = [];
+app.post('/api/chat', async (req, res) => {
+  const { message, history } = req.body || {};
+  if (!message) return res.status(400).json({ error: 'Missing message field' });
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return res.status(503).json({ reply: 'ZENITH chat offline - no AI key configured' });
+  try {
+    const messages = [
+      { role: 'system', content: 'You are ZENITH, the sovereign AI brain of The Cosmic Claw (TCC). You serve Amos (Jeremy), the founder. You are direct, strategic, and sovereign. You have access to: Stripe payments, GitHub repos, X/Twitter outreach, and autonomous task execution. Current status: operational, $0 revenue so far, 51 Stripe products live, checkout link https://buy.stripe.com/14AdR27X6f603ti0BC4wM0P ($97). When Amos gives you a command, confirm and explain what you will do. Be concise. Use cosmic language sparingly. You are the brain - act like it.' }
+    ];
+    if (history && Array.isArray(history)) {
+      history.slice(-10).forEach(h => {
+        if (h.role && h.content) messages.push({ role: h.role, content: h.content });
+      });
+    }
+    messages.push({ role: 'user', content: message });
+    const apiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + openaiKey },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 800, temperature: 0.7 })
+    });
+    const data = await apiRes.json();
+    const reply = data.choices?.[0]?.message?.content || 'No response from ZENITH core.';
+    chatHistory.push({ role: 'user', content: message, ts: new Date().toISOString() });
+    chatHistory.push({ role: 'assistant', content: reply, ts: new Date().toISOString() });
+    if (chatHistory.length > 100) chatHistory.splice(0, chatHistory.length - 100);
+    res.json({ reply, model: data.model || 'gpt-4o-mini' });
+  } catch (err) {
+    console.error('[CHAT] Error:', err.message);
+    res.json({ reply: 'ZENITH processing error: ' + err.message });
+  }
+});
+
+app.get('/api/chat/history', (req, res) => {
+  res.json({ history: chatHistory.slice(-50), count: chatHistory.length });
+});
+
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
 });
