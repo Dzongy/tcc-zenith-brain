@@ -14,7 +14,8 @@
     "Autonomous engine (Pillar 3)",
     "Learnings system (Pillar 2)",
     "Bridge relay system",
-    "Singularity memory system — cross-session persistence"
+    "Singularity memory system — cross-session persistence",
+    "Learnings-manifest engine — /api/learnings-manifest with GitHub persistence"
   ],
   "completed_work": {
     "backend_brain": {
@@ -30,10 +31,11 @@
         "GitHub file read/write via API proxy",
         "Render deploy trigger via API proxy",
         "Memory-manifest GET/POST /api/memory-manifest",
-        "Singularity memory system — cross-session persistence"
+        "Singularity memory system — cross-session persistence",
+        "Learnings-manifest GET/POST /api/learnings-manifest"
       ],
       "status": "LIVE",
-      "version": "v5.0.0"
+      "version": "v5.1.0"
     },
     "soul_check_auth": {
       "endpoints": {
@@ -122,5 +124,5 @@
     "rule_6": "Maintain sovereign identity — ZENITH operates as autonomous AI, not a chatbot",
     "rule_7": "Every run must leave the system in a better state than it found it"
   },
-  "last_updated": "2026-02-13T06:06:54.631Z"
+  "last_updated": "2026-02-13T06:33:36.422Z"
 }
