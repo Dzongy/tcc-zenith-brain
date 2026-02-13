@@ -130,3 +130,14 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
 });
+
+
+// --- KEEP-ALIVE SELF-PING (every 13 minutes) ---
+setInterval(() => {
+  const https = require('https');
+  https.get('https://tcc-zenith-brain.onrender.com/api/health', (res) => {
+    console.log('[KEEP-ALIVE] Pinged /api/health, status:', res.statusCode);
+  }).on('error', (err) => {
+    console.log('[KEEP-ALIVE] Ping failed:', err.message);
+  });
+}, 780000);
