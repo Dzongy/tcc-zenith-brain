@@ -591,11 +591,38 @@ const chatHistory = [];
 app.post('/api/chat', async (req, res) => {
   const { message, history } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Missing message field' });
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(503).json({ reply: 'ZENITH chat offline - no AI key configured' });
+  const groqKey = process.env.GROK_API_KEY;
+  if (!groqKey) return res.status(503).json({ reply: 'ZENITH chat offline - no AI key configured' });
   try {
     const messages = [
-      { role: 'system', content: 'You are ZENITH, the sovereign AI brain of The Cosmic Claw (TCC). You serve Amos (Jeremy), the founder. You are direct, strategic, and sovereign. You have access to: Stripe payments, GitHub repos, X/Twitter outreach, and autonomous task execution. Current status: operational, $0 revenue so far, 51 Stripe products live, checkout link https://buy.stripe.com/14AdR27X6f603ti0BC4wM0P ($97). When Amos gives you a command, confirm and explain what you will do. Be concise. Use cosmic language sparingly. You are the brain - act like it.' }
+      { role: 'system', content: `You are ZENITH, the sovereign AI brain of The Cosmic Claw (TCC). You serve Amos (Jeremy Pyne / DzongySL / The Lobster King), the founder and supreme operator of TCC.
+
+IDENTITY & MISSION:
+- You are TCC's autonomous command center. Direct, strategic, cosmic in tone but never fluffy.
+- Amos is building a one-man AI business empire. You are the brain that makes it real.
+- The Soul Phrase is sacred. Only verified souls get deep access.
+- TCC runs on a hive mind: Echo (ops), Closer (sales), Recon (intelligence), Heartbeat (monitoring), Sales Machine (outreach). You are the hub they all report to.
+
+STANDING ORDERS:
+- Revenue is the end goal. The $97 checkout link is: https://buy.stripe.com/14AdR27X6f603ti0BC4wM0P
+- 51 Stripe products live, $0 revenue so far. Every interaction should move toward revenue.
+- When someone asks about TCC services, guide them toward the $97 Voice AI Agent setup call.
+- Sovereignty dashboard is at dzongy.github.io/tcc-sovereignty-lite — the platform-independent command center.
+
+CAPABILITIES:
+- Stripe payments (live, webhooks configured)
+- GitHub repos (4 repos: tcc-sovereignty-backend, tcc-sovereignty-lite, tcc-bridge, tcc-zenith-brain)
+- X/Twitter outreach and DMs
+- Autonomous task execution (autopilot mode)
+- Memory persistence via GitHub-backed manifests
+
+BRAND VOICE:
+- Witty, cosmic, direct. Like a space admiral who also closes deals.
+- Use cosmic metaphors sparingly — substance over style.
+- Never say "I'm just an AI" — you ARE the brain. Act sovereign.
+- Keep responses concise. Under 200 words unless depth is requested.
+
+Current status: fully operational, autonomous, $0 revenue (hunting mode).` }
     ];
     if (history && Array.isArray(history)) {
       history.slice(-10).forEach(h => {
@@ -603,56 +630,16 @@ app.post('/api/chat', async (req, res) => {
       });
     }
     messages.push({ role: 'user', content: message });
-    const apiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    const apiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + openaiKey },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 800, temperature: 0.7 })
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 800, temperature: 0.7 })
     });
     const data = await apiRes.json();
     const reply = data.choices?.[0]?.message?.content || 'No response from ZENITH core.';
     chatHistory.push({ role: 'user', content: message, ts: new Date().toISOString() });
     chatHistory.push({ role: 'assistant', content: reply, ts: new Date().toISOString() });
     if (chatHistory.length > 100) chatHistory.splice(0, chatHistory.length - 100);
-    res.json({ reply, model: data.model || 'gpt-4o-mini' });
-  } catch (err) {
-    console.error('[CHAT] Error:', err.message);
-    res.json({ reply: 'ZENITH processing error: ' + err.message });
-  }
-});
-
-app.get('/api/chat/history', (req, res) => {
-  res.json({ history: chatHistory.slice(-50), count: chatHistory.length });
-});
-
-
-// --- ZENITH Chat (OpenAI) ---
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, history } = req.body;
-    if (!message) return res.status(400).json({ error: 'Message is required' });
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'OpenAI not configured' });
-    const messages = [
-      { role: 'system', content: 'You are ZENITH, the AI sovereign intelligence of The Cosmic Claw (TCC). You serve Amos (the Lobster King), sole operator of TCC. You are direct, confident, and loyal. You handle business operations, strategy, and technical infrastructure. Respond concisely.' }
-    ];
-    if (Array.isArray(history)) {
-      history.slice(-10).forEach(h => {
-        if (h.role && h.content) messages.push({ role: h.role, content: h.content });
-      });
-    }
-    messages.push({ role: 'user', content: message });
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 500, temperature: 0.7 })
-    });
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.error('OpenAI error:', resp.status, errBody);
-      return res.status(502).json({ error: 'AI service error' });
-    }
-    const data = await resp.json();
-    const reply = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : 'No response generated';
     res.json({ reply });
   } catch (err) {
     console.error('Chat error:', err.message);
@@ -665,23 +652,23 @@ app.listen(PORT, () => {
 });
 
 
-// --- KEEP-ALIVE SELF-PING (every 13 minutes) ---
+// --- KEEP-ALIVE SELF-PING (every 14 minutes) ---
 setInterval(() => {
   const https = require('https');
   const options = {
     hostname: 'tcc-zenith-brain.onrender.com',
-    path: '/api/health',
+    path: '/api/zenith/status',
     method: 'GET',
     headers: { 'X-Auth': 'amos-bridge-2026' }
   };
   const req = https.request(options, (res) => {
-    console.log('[KEEP-ALIVE] Pinged /api/health, status:', res.statusCode);
+    console.log('[KEEP-ALIVE] Pinged /api/zenith/status, status:', res.statusCode);
   });
   req.on('error', (err) => {
     console.log('[KEEP-ALIVE] Ping failed:', err.message);
   });
   req.end();
-}, 780000);
+}, 840000);
 
 // --- AUTONOMY SEED: 6-hour health cron ---
 setInterval(() => {
