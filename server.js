@@ -559,11 +559,11 @@ async function runAutopilotCycle() {
   try {
     const groqKey = process.env.OPENROUTER_API_KEY;
     if (!groqKey) { console.log('[AUTOPILOT] No GROK_API_KEY set, skipping cycle'); return; }
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
         messages: [
           { role: 'system', content: 'You are the TCC ZENITH autopilot. Generate a short, engaging tweet about AI automation for small businesses. Be witty, direct, slightly cosmic. Include a call to action. Max 280 chars.' },
           { role: 'user', content: 'Generate a tweet for this cycle.' }
