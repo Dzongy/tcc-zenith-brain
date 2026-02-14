@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const app = express();
-app.use(express.json());
+app.use((req, res, next) => { if (req.path === '/api/stripe/webhook') return next(); express.json()(req, res, next); });
 
 const CONFIG = {
   GITHUB_TOKEN: process.env.GITHUB_TOKEN,
