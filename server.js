@@ -749,7 +749,7 @@ const chatHistory = [];
 app.post('/api/chat', async (req, res) => {
   const { message, history } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Missing message field' });
-  const groqKey = process.env.OPENROUTER_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
   if (!groqKey) return res.status(503).json({ reply: 'ZENITH chat offline - no AI key configured' });
   try {
     const messages = [
@@ -835,15 +835,13 @@ Witty, cosmic, direct. Like a space admiral who also closes deals. Cosmic metaph
       });
     }
     messages.push({ role: 'user', content: message });
-    const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const apiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + groqKey,
-          'HTTP-Referer': 'https://dzongy.github.io/tcc-sovereignty-lite',
-          'X-Title': 'TCC ZENITH'
         },
-      body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', messages, max_tokens: 800, temperature: 0.7 })
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 800, temperature: 0.7 })
     });
     if (!apiRes.ok) {
       const errBody = await apiRes.text();
