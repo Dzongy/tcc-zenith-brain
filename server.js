@@ -835,8 +835,13 @@ Witty, cosmic, direct. Like a space admiral who also closes deals. Cosmic metaph
     messages.push({ role: 'user', content: message });
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
-      body: JSON.stringify({ model: 'meta-llama/llama-3.1-8b-instruct:free', messages, max_tokens: 800, temperature: 0.7 })
+      headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + groqKey,
+          'HTTP-Referer': 'https://dzongy.github.io/tcc-sovereignty-lite',
+          'X-Title': 'TCC ZENITH'
+        },
+      body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', messages, max_tokens: 800, temperature: 0.7 })
     });
     if (!apiRes.ok) {
       const errBody = await apiRes.text();
