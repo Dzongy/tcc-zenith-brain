@@ -73,6 +73,33 @@ app.use((req, res, next) => {
 });
 
 // === Stripe Webhook (raw body BEFORE json parser) ===
+
+// === DASHBOARD SERVING (cached, fetched from GitHub) ===
+let dashboardCache = { html: null, fetchedAt: 0 };
+const DASHBOARD_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+
+app.get('/', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (dashboardCache.html && (now - dashboardCache.fetchedAt) < DASHBOARD_CACHE_MS) {
+      res.set('Content-Type', 'text/html');
+      return res.send(dashboardCache.html);
+    }
+    const ghToken = process.env.GITHUB_TOKEN;
+    const headers = ghToken ? { 'Authorization': 'Bearer ' + ghToken, 'User-Agent': 'ZENITH-Brain' } : { 'User-Agent': 'ZENITH-Brain' };
+    const resp = await fetch('https://raw.githubusercontent.com/Dzongy/tcc-sovereignty-lite/main/index.html', { headers });
+    if (!resp.ok) throw new Error('GitHub fetch failed: ' + resp.status);
+    const html = await resp.text();
+    dashboardCache = { html, fetchedAt: now };
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Dashboard fetch error:', err.message);
+    res.set('Content-Type', 'text/html');
+    res.send('<html><head><title>ZENITH</title><style>body{background:#0a0a0f;color:#00ffc8;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}h1{font-size:2em}</style></head><body><h1>ZENITH Dashboard — loading...</h1></body></html>');
+  }
+});
+
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
   try {
     const event = JSON.parse(req.body.toString());
