@@ -861,6 +861,28 @@ Witty, cosmic, direct. Like a space admiral who also closes deals. Cosmic metaph
 });
 
 
+
+// === ZENITH AUTOPILOT — Phase 4.25: Free-Thinking Brain via Groq ===
+app.post('/api/zenith/autopilot', async (req, res) => {
+  try {
+    const memoryUrl = 'https://raw.githubusercontent.com/Dzongy/tcc-sovereignty-lite/main/zenith-memory.json';
+    const memResponse = await fetch(memoryUrl + '?t=' + Date.now());
+    if (!memResponse.ok) return res.status(500).json({ error: 'Failed to fetch zenith-memory.json' });
+    const memory = await memResponse.json();
+    const taskQueue = memory.task_queue || [];
+    const pendingTasks = taskQueue.filter(t => t.status === 'pending');
+    if (pendingTasks.length === 0) return res.json({ status: 'idle', message: 'No pending tasks', timestamp: new Date().toISOString() });
+    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: 'You are ZENITH, the autonomous AI brain of The Cosmic Claw (TCC). Analyze pending tasks and decide actions. Output JSON with task_id, action, reasoning, status for each.' }, { role: 'user', content: 'Pending tasks: ' + JSON.stringify(pendingTasks) }], temperature: 0.3, max_tokens: 2000 })
+    });
+    if (!groqResponse.ok) { const err = await groqResponse.text(); return res.status(500).json({ error: 'Groq API failed', details: err }); }
+    const groqData = await groqResponse.json();
+    res.json({ status: 'processed', tasks_analyzed: pendingTasks.length, ai_response: groqData.choices[0].message.content, model: 'llama-3.3-70b-versatile', timestamp: new Date().toISOString() });
+  } catch (err) { console.error('[AUTOPILOT ERROR]', err); res.status(500).json({ error: err.message }); }
+});
+
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
 });
