@@ -366,7 +366,9 @@ async function callGrok(prompt) {
   try {
     const res = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      headers: { 'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://dzongy.github.io/tcc-sovereignty-lite',
+          'X-Title': 'TCC ZENITH', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({
         model: 'grok-3-mini',
         messages: [
