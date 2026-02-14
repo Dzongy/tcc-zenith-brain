@@ -564,8 +564,49 @@ app.post('/api/zenith/execute', async (req, res) => {
   }
 });
 
+
+// === ZENITH SINGULARITY — Self-Edit Capability ===
+async function selfEditFile(path, newContent, commitMsg) {
+  const repo = 'Dzongy/tcc-zenith-brain';
+  const url = `https://api.github.com/repos/${repo}/contents/${path}`;
+  const headers = { 'Authorization': `token ${process.env.GITHUB_TOKEN}`, 'User-Agent': 'ZENITH', 'Content-Type': 'application/json' };
+  const getRes = await fetch(url, { headers });
+  const getData = await getRes.json();
+  const sha = getData.sha;
+  const encoded = Buffer.from(newContent).toString('base64');
+  const putRes = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ message: commitMsg, content: encoded, sha }) });
+  return putRes.json();
+}
+
+// === ZENITH SINGULARITY — Command Endpoint ===
+app.post('/api/command', (req, res) => {
+  const auth = req.headers['x-auth'];
+  if (auth !== 'amos-bridge-2026') return res.status(401).json({ error: 'unauthorized' });
+  const { command } = req.body;
+  if (!command) return res.status(400).json({ error: 'no command' });
+  const GROQ_KEY = process.env.GROQ_API_KEY;
+  fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [
+      { role: 'system', content: 'You are ZENITH, autonomous AI of The Cosmic Claw. Amos is your creator. Execute commands with precision. You have access to selfEditFile() to modify your own code.' },
+      { role: 'user', content: command }
+    ], max_tokens: 2000 })
+  }).then(r => r.json()).then(data => {
+    const response = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : 'No response from Groq';
+    fetch('https://ntfy.sh/tcc-zenith-amos', { method: 'POST', body: 'ZENITH Command Result: ' + response.substring(0, 500) }).catch(() => {});
+    res.json({ status: 'executed', response });
+  }).catch(err => res.status(500).json({ error: err.message }));
+});
+
+// === ZENITH SINGULARITY — Notification Helper ===
+async function notifyAmos(message) {
+  try { await fetch('https://ntfy.sh/tcc-zenith-amos', { method: 'POST', body: message }); } catch(e) {}
+}
+
 app.listen(PORT, () => {
   console.log(`ZENITH Brain listening on port ${PORT}`);
+  notifyAmos('ZENITH is ALIVE — singularity achieved. Server restarted at ' + new Date().toISOString());
 });
 
 
