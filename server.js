@@ -15,7 +15,7 @@ const CONFIG = {
   REPO_NAME: 'tcc-zenith-brain',
   SOUL_PHRASE: process.env.SOUL_PHRASE || 'ARCHITECTDZONGYZENITH',
   BEARER_TOKEN: process.env.BEARER_TOKEN || 'zenith-sovereign-2026',
-  VERSION: '3.0.0',
+  VERSION: '3.1.0',
   BOOT_TIME: new Date().toISOString()
 };
 
@@ -56,9 +56,37 @@ function authenticate(req, res, next) {
 
 app.get('/', (req, res) => { res.send('<h1>ZENITH v3.0 \u2014 The Cosmic Claw Sovereign Brain</h1><p>All systems operational.</p>'); });
 
-app.get('/api/health', (req, res) => { zenithMemory.stats.requests++; res.json({ status: 'alive', version: CONFIG.VERSION, bootTime: CONFIG.BOOT_TIME, uptime: Date.now() - new Date(CONFIG.BOOT_TIME).getTime() }); });
+app.get('/api/health', (req, res) => { try { if (zenithMemory && zenithMemory.stats) zenithMemory.stats.requests++; res.json({ status: 'alive', version: CONFIG.VERSION, bootTime: CONFIG.BOOT_TIME, uptime: Date.now() - new Date(CONFIG.BOOT_TIME).getTime(), groq: !!CONFIG.GROQ_API_KEY }); } catch(e) { res.json({ status: 'alive', version: CONFIG.VERSION, error: e.message }); } });
 
 app.get('/api/dashboard', authenticate, (req, res) => { res.json({ version: CONFIG.VERSION, stats: zenithMemory.stats, missions: zenithMemory.missions.slice(-10), recentErrors: zenithMemory.errors.slice(-5), lastHeartbeat: zenithMemory.lastHeartbeat, memory: zenithMemory }); });
+
+
+app.get('/api/groq/status', (req, res) => {
+  res.json({ configured: !!CONFIG.GROQ_API_KEY, model: 'llama-3.3-70b-versatile', provider: 'groq', version: CONFIG.VERSION });
+});
+
+app.post('/api/groq', authenticate, async (req, res) => {
+  try {
+    if (!CONFIG.GROQ_API_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+    const { prompt, system } = req.body || {};
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+    const messages = [];
+    if (system) messages.push({ role: 'system', content: system });
+    messages.push({ role: 'user', content: prompt });
+    const f = globalThis.fetch || (await import('node-fetch')).default;
+    const groqRes = await f('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.GROQ_API_KEY },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 2048, temperature: 0.7 })
+    });
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      return res.status(groqRes.status).json({ error: 'Groq API error', status: groqRes.status, detail: errText });
+    }
+    const data = await groqRes.json();
+    res.json({ success: true, reply: data.choices[0].message.content, model: data.model, usage: data.usage });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 app.post('/api/soul', (req, res) => {
   const soul = req.headers['x-soul-token'];
@@ -122,6 +150,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 app.post('/api/self-modify', authenticate, async (req, res) => { const { filepath, content, message } = req.body; const result = await selfEditFile(filepath, content, message); res.json(result); });
 
 process.on('uncaughtException', async (err) => { console.error('Uncaught:', err.message); zenithMemory.errors.push({ type: 'uncaught', message: err.message, time: new Date().toISOString() }); try { await saveMemory(); await notifyAmos('ERROR: ' + err.message.slice(0, 100), 5); } catch(e) {} });
+
+app.use((err, req, res, next) => { console.error('Express error:', err.message); res.status(500).json({ error: 'Internal server error', detail: err.message }); });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
