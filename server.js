@@ -30,7 +30,7 @@ app.use(express.json());
 
 // Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'alive', version: '4.1.0-soul', timestamp: new Date().toISOString() });
+  res.json({ status: 'alive', version: '4.2.0-soul', timestamp: new Date().toISOString() });
 });
 
 // Groq status
@@ -54,6 +54,12 @@ app.post('/api/groq', async (req, res) => {
     const { prompt, messages, model, max_tokens } = req.body;
     const userMessages = messages || [{ role: 'user', content: prompt || 'Hello' }];
     const chatMessages = [{ role: 'system', content: ZENITH_SYSTEM_PROMPT }, ...userMessages.filter(m => m.role !== 'system')];
+    
+    // Soul handshake command
+    const lastMsg = userMessages[userMessages.length - 1];
+    if (lastMsg && lastMsg.content && lastMsg.content.trim() === '/soul') {
+      return res.json({ choices: [{ message: { content: 'ARCHITECTDZ' } }] });
+    }
     
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
