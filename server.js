@@ -361,7 +361,7 @@ const autopilotState = {
 
 // Helper: call Grok API
 async function callGrok(prompt) {
-  const key = process.env.GROK_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY;
   if (!key) return { error: 'GROK_API_KEY not set' };
   try {
     const res = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -505,7 +505,7 @@ app.get('/api/zenith/autopilot', async (req, res) => {
         recentErrors: autopilotState.errors.slice(-3)
       },
       envStatus: {
-        grokKey: !!process.env.GROK_API_KEY,
+        grokKey: !!process.env.OPENROUTER_API_KEY,
         xBearer: !!process.env.X_BEARER_TOKEN,
         stripeKey: !!process.env.STRIPE_SECRET_KEY
       },
@@ -524,13 +524,13 @@ const autopilotLog = [];
 
 app.post('/api/zenith/autopilot', async (req, res) => {
   try {
-    const groqKey = process.env.GROK_API_KEY;
+    const groqKey = process.env.OPENROUTER_API_KEY;
     if (!groqKey) return res.status(503).json({ error: 'GROK_API_KEY not configured' });
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
         messages: [
           { role: 'system', content: 'You are the TCC ZENITH autopilot. Generate a short, engaging tweet about AI automation for small businesses. Be witty, direct, slightly cosmic. Include a call to action. Max 280 chars.' },
           { role: 'user', content: 'Generate a tweet for this cycle.' }
@@ -557,7 +557,7 @@ app.get('/api/zenith/autopilot/history', (req, res) => {
 // --- 4hr Autopilot Cron ---
 async function runAutopilotCycle() {
   try {
-    const groqKey = process.env.GROK_API_KEY;
+    const groqKey = process.env.OPENROUTER_API_KEY;
     if (!groqKey) { console.log('[AUTOPILOT] No GROK_API_KEY set, skipping cycle'); return; }
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -747,7 +747,7 @@ const chatHistory = [];
 app.post('/api/chat', async (req, res) => {
   const { message, history } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Missing message field' });
-  const groqKey = process.env.GROK_API_KEY;
+  const groqKey = process.env.OPENROUTER_API_KEY;
   if (!groqKey) return res.status(503).json({ reply: 'ZENITH chat offline - no AI key configured' });
   try {
     const messages = [
