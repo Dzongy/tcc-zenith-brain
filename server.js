@@ -610,23 +610,34 @@ setInterval(() => {
 }, 21600000);
 
 
-// --- AUTOPILOT CRON: 4-hour self-invoking cycle ---
+// --- ZENITH AUTONOMOUS THINKING LOOP: every 30 seconds ---
 setInterval(() => {
   const https = require('https');
+  const postData = JSON.stringify({});
   const options = {
     hostname: 'tcc-zenith-brain.onrender.com',
     path: '/api/zenith/autopilot',
-    method: 'GET'
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
   };
   const req = https.request(options, (res) => {
     let data = '';
     res.on('data', (chunk) => { data += chunk; });
     res.on('end', () => {
-      console.log('[AUTOPILOT-CRON] 4h cycle:', res.statusCode);
+      try {
+        const result = JSON.parse(data);
+        console.log('[ZENITH-THINK] Cycle complete:', res.statusCode, result.action || 'idle');
+      } catch(e) {
+        console.log('[ZENITH-THINK] Cycle:', res.statusCode);
+      }
     });
   });
   req.on('error', (err) => {
-    console.log('[AUTOPILOT-CRON] 4h cycle failed:', err.message);
+    console.log('[ZENITH-THINK] Cycle failed:', err.message);
   });
+  req.write(postData);
   req.end();
-}, 14400000);
+}, 30000);
