@@ -112,7 +112,7 @@ app.use(express.json());
 
 // Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'operational', version: '5.0.0-soul', name: 'ZENITH', uptime: process.uptime() });
+  res.json({ status: 'operational', version: '5.1.0-singularity', name: 'ZENITH', uptime: process.uptime() });
 });
 
 // Groq status
@@ -195,6 +195,78 @@ app.post('/api/learnings-manifest', authCheck, (req, res) => {
 });
 
 // Error handler
+
+// === ZENITH AUTOPILOT — Singularity Loop (Phase 4.25) ===
+app.post('/api/zenith/autopilot', async (req, res) => {
+  try {
+    const GROQ_KEY = process.env.GROQ_API_KEY;
+    const GH_TOKEN = process.env.GITHUB_TOKEN;
+    if (!GROQ_KEY || !GH_TOKEN) return res.status(500).json({ error: 'Missing GROQ_API_KEY or GITHUB_TOKEN' });
+
+    // Step 1: Fetch zenith-memory.json
+    const memUrl = 'https://raw.githubusercontent.com/Dzongy/tcc-sovereignty-lite/main/zenith-memory.json';
+    const memRes = await fetch(memUrl);
+    if (!memRes.ok) return res.status(502).json({ error: 'Failed to fetch memory', status: memRes.status });
+    const memory = await memRes.json();
+
+    // Step 2: Send to Groq for analysis
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + GROQ_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are ZENITH, autonomous AI brain of TCC. Analyze this memory state. What should improve? What patterns do you see? What is the next priority? Return JSON with keys: learnings (array of strings), next_priority (string), run_counter_increment (number).' },
+          { role: 'user', content: JSON.stringify(memory) }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' }
+      })
+    });
+    if (!groqRes.ok) { const err = await groqRes.text(); return res.status(502).json({ error: 'Groq failed', detail: err }); }
+    const groqData = await groqRes.json();
+    let analysis;
+    try { analysis = JSON.parse(groqData.choices[0].message.content); } catch(e) { analysis = { learnings: [groqData.choices[0].message.content], next_priority: 'parse_error', run_counter_increment: 1 }; }
+
+    // Step 3: Fetch current zenith-memory.json via GitHub API for SHA
+    const ghFileRes = await fetch('https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-memory.json', {
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'User-Agent': 'ZENITH-Brain', 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!ghFileRes.ok) return res.status(502).json({ error: 'GitHub file fetch failed', status: ghFileRes.status });
+    const ghFile = await ghFileRes.json();
+    const fileSha = ghFile.sha;
+
+    // Step 4: Merge learnings into memory
+    if (!memory.autopilot_learnings) memory.autopilot_learnings = [];
+    memory.autopilot_learnings = memory.autopilot_learnings.concat(analysis.learnings || []).slice(-50);
+    memory.autopilot_next_priority = analysis.next_priority || 'none';
+    memory.autopilot_run_counter = (memory.autopilot_run_counter || 0) + (analysis.run_counter_increment || 1);
+    memory.last_sync = new Date().toISOString();
+    memory.version = (memory.version || '7.0.0').replace(/\d+$/, function(m) { return String(Number(m) + 1); });
+
+    // Step 5: Push updated memory back to GitHub
+    const updatedContent = Buffer.from(JSON.stringify(memory, null, 2)).toString('base64');
+    const pushRes = await fetch('https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-memory.json', {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + GH_TOKEN, 'User-Agent': 'ZENITH-Brain', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'ZENITH autopilot tick ' + memory.autopilot_run_counter, content: updatedContent, sha: fileSha })
+    });
+    if (!pushRes.ok) { const err = await pushRes.text(); return res.status(502).json({ error: 'GitHub push failed', detail: err }); }
+    const pushData = await pushRes.json();
+
+    res.json({ success: true, tick: memory.autopilot_run_counter, learnings: analysis.learnings, next_priority: analysis.next_priority, commit: pushData.commit ? pushData.commit.sha : 'unknown' });
+  } catch (err) {
+    console.error('Autopilot error:', err);
+    res.status(500).json({ error: 'Autopilot cycle failed', detail: err.message });
+  }
+});
+
+// === ZENITH STATUS ===
+app.get('/api/zenith/status', (req, res) => {
+  res.json({ status: 'alive', version: '5.1.0-singularity', entity: 'ZENITH', last_heartbeat: Date.now(), phase: 'P4.25-autopilot' });
+});
+
 app.use((err, req, res, next) => {
   console.error('[Error]', err.message);
   res.status(500).json({ error: 'Internal server error' });
