@@ -40,13 +40,13 @@ OPERATIONAL DOCTRINE:
 let memoryCache = null;
 let memoryCacheTime = 0;
 const MEMORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const MEMORY_RAW_URL = 'https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-memory.json';
+const MEMORY_RAW_URL = 'https://raw.githubusercontent.com/Dzongy/tcc-sovereignty-lite/main/zenith-memory.json';
 
 async function loadMemory() {
   const now = Date.now();
   if (memoryCache && (now - memoryCacheTime) < MEMORY_CACHE_TTL) return memoryCache;
   try {
-    const res = await fetch(MEMORY_RAW_URL, { headers: { "Authorization": "Bearer " + process.env.GITHUB_TOKEN, "Accept": "application/vnd.github.raw", "User-Agent": "ZENITH-Brain" } });
+    const res = await fetch(MEMORY_RAW_URL);
     if (res.ok) {
       memoryCache = await res.json();
       memoryCacheTime = now;
