@@ -4,7 +4,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================================================================
-// ZENITH v7.0.0-supabase ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
+// ZENITH v7.1.0-schema-fix ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
 // ================================================================
 
 const ZENITH_SYSTEM_PROMPT = `You are ZENITH ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the sovereign AI brain of The Cosmic Claw (TCC).
@@ -118,7 +118,7 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ZENITH ONLINE',
-    version: '7.0.0-supabase',
+    version: '7.1.0-schema-fix',
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   });
@@ -210,7 +210,7 @@ app.get('/api/zenith/memory', async (req, res) => {
     const rows = await resp.json();
     const memory = {};
     for (const row of rows) {
-      memory[row.key] = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+      memory[row.brain_id] = { key_knowledge: row.key_knowledge, updated_at: row.updated_at };
     }
     memory._source = 'supabase';
     memory._retrieved_at = new Date().toISOString();
@@ -512,7 +512,7 @@ app.post('/api/zenith/memory/update', async (req, res) => {
       return res.status(503).json({ error: 'Supabase not configured' });
     }
     const now = new Date().toISOString();
-    const existingResp = await fetch(supabaseUrl + '/rest/v1/memory?key=eq.brain_' + brain_id + '&select=*', {
+    const existingResp = await fetch(supabaseUrl + '/rest/v1/memory?brain_id=eq.' + brain_id + '&select=*', {
       headers: {
         'apikey': supabaseKey,
         'Authorization': 'Bearer ' + supabaseKey,
@@ -522,9 +522,9 @@ app.post('/api/zenith/memory/update', async (req, res) => {
     let existingKnowledge = [];
     if (existingResp.ok) {
       const rows = await existingResp.json();
-      if (rows.length > 0 && rows[0].value) {
-        const val = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
-        existingKnowledge = val.key_knowledge || [];
+      if (rows.length > 0 && rows[0].key_knowledge) {
+        const val = typeof rows[0].key_knowledge === 'string' ? JSON.parse(rows[0].key_knowledge) : rows[0].key_knowledge;
+        existingKnowledge = Array.isArray(val) ? val : [];
       }
     }
     const merged = [...new Set([...existingKnowledge, ...key_knowledge])];
@@ -542,8 +542,8 @@ app.post('/api/zenith/memory/update', async (req, res) => {
         'Prefer': 'resolution=merge-duplicates'
       },
       body: JSON.stringify({
-        key: 'brain_' + brain_id,
-        value: memoryValue,
+        brain_id: brain_id,
+        key_knowledge: merged,
         updated_at: now
       })
     });
