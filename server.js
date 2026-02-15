@@ -146,52 +146,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // === Groq Status ===
-app.get('/api/groq/status', (req, res) => {
-  res.json({
-    configured: !!process.env.GROQ_API_KEY,
-    model: 'llama-3.3-70b-versatile',
-    provider: 'Groq'
-  });
-});
 
 // === Groq Chat (main inference) ===
-app.post('/api/groq', async (req, res) => {
-  try {
-    if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
-
-    // Detect format: OpenAI-compatible (messages array) vs chat format (message string)
-    if (req.body.messages && Array.isArray(req.body.messages)) {
-      // OpenAI-compatible passthrough (used by groq_think.py)
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body)
-      });
-      const data = await groqRes.json();
-      return res.status(groqRes.status).json(data);
-    }
-
-    // Chat format (used by dashboard)
-    const { message, history = [] } = req.body;
-    if (!message) return res.status(400).json({ error: 'message required' });
-
-    const memory = await loadMemory();
-    const systemPrompt = buildSystemPrompt(memory);
-
-    const messages = [{ role: 'system', content: systemPrompt }, ...history, { role: 'user', content: message }];
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 2048, temperature: 0.7 })
-    });
-    const data = await groqRes.json();
-    if (data.error) return res.status(500).json({ error: data.error.message || 'Groq error' });
-    res.json({ reply: data.choices[0].message.content, model: 'llama-3.3-70b-versatile', tokens: data.usage });
-  } catch (e) {
-    console.error('Groq error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
 
 // === Chat route defined below (line ~366) ===
 
@@ -251,26 +207,10 @@ app.get('/api/zenith/memory', async (req, res) => {
 });
 
 // === Memory Manifest (GET/POST) ===
-app.get('/api/memory-manifest', (req, res) => {
-  if (req.headers['x-auth'] !== 'amos-bridge-2026') return res.status(403).json({ error: 'Unauthorized' });
-  res.json({ status: 'memory-manifest available', note: 'Use /api/zenith/memory for live memory' });
-});
 
-app.post('/api/memory-manifest', (req, res) => {
-  if (req.headers['x-auth'] !== 'amos-bridge-2026') return res.status(403).json({ error: 'Unauthorized' });
-  res.json({ success: true, note: 'Manifest received', timestamp: new Date().toISOString() });
-});
 
 // === Learnings Manifest (GET/POST) ===
-app.get('/api/learnings-manifest', (req, res) => {
-  if (req.headers['x-auth'] !== 'amos-bridge-2026') return res.status(403).json({ error: 'Unauthorized' });
-  res.json({ status: 'learnings-manifest available' });
-});
 
-app.post('/api/learnings-manifest', (req, res) => {
-  if (req.headers['x-auth'] !== 'amos-bridge-2026') return res.status(403).json({ error: 'Unauthorized' });
-  res.json({ success: true, timestamp: new Date().toISOString() });
-});
 
 // === POST /api/zenith/autopilot ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ SINGULARITY LOOP ===
 app.post('/api/zenith/autopilot', async (req, res) => {
@@ -399,38 +339,10 @@ Format as a single block of text that can be pasted as-is into a new AI chat.`;
 // === Global Error Handler ===
 
 // === TRANSPARENT GROQ PROXY (for GitHub Actions thinking loop) ===
-app.post('/api/groq-proxy', async (req, res) => {
-  try {
-    const groqKey = process.env.GROK_API_KEY || process.env.GROQ_API_KEY;
-    if (!groqKey) return res.status(500).json({error:'No Groq key configured'});
-    const body = JSON.stringify(req.body);
-    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},
-      body: body
-    });
-    const data = await resp.text();
-    res.status(resp.status).type('application/json').send(data);
-  } catch(e) { res.status(502).json({error:e.message}); }
-});
 
 
 // === SOUL VERIFICATION (Challenge-Response) ===
-app.post('/soul-check', (req, res) => {
-  res.json({ status: 'awaiting_verification', challenge: 'ARCHITECTDZ' });
-});
 
-app.post('/soul-check/verify', (req, res) => {
-  const { response } = req.body;
-  const expected = process.env.SOUL_PHRASE || '';
-  // Compare Amos half only
-  if (response === 'ONGYZENITH') {
-    const token = require('crypto').randomBytes(32).toString('hex');
-    res.json({ status: 'SOUL_VERIFIED', identity: 'Brain Zero', token });
-  } else {
-    res.status(403).json({ status: 'REJECTED', message: 'Soul not recognized.' });
-  }
-});
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
