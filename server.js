@@ -1,3 +1,8 @@
+// ZENITH v10.0.1 — Model fix: llama-3.3-70b-versatile → llama-3.1-8b-instant
+// Reason: 70b hits 100K token/day free tier limit. 8b has higher limits, faster, sufficient for thinking loops.
+// X/Twitter content generation removed per General Order Feb 15 2026.
+// Changed by: Hive consensus, DNA protocol execution
+
 const express = require('express');
 const fetch = globalThis.fetch || require('node-fetch');
 const app = express();
@@ -250,7 +255,7 @@ Respond in JSON format:
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         messages: [{ role: 'system', content: 'You are ZENITH autopilot ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ the autonomous decision engine. Respond ONLY with valid JSON.' }, { role: 'user', content: analysisPrompt }],
         max_tokens: 1500, temperature: 0.3
       })
@@ -291,7 +296,7 @@ Format as a single block of text that can be pasted as-is into a new AI chat.`;
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         messages: [{ role: 'system', content: 'You are ZENITH. Write a comprehensive session resume prompt. Be direct and information-dense.' }, { role: 'user', content: resumePrompt }],
         max_tokens: 2000, temperature: 0.5
       })
@@ -381,7 +386,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         messages,
         max_tokens: 2048,
         temperature: 0.7
