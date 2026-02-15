@@ -322,17 +322,22 @@ Format as a single block of text that can be pasted as-is into a new AI chat.`;
     const elapsed = Date.now() - startTime;
     console.log('[AUTOPILOT] Complete in ' + elapsed + 'ms');
 
-    res.json({
+    const thought = {
       success: true,
+      timestamp: new Date().toISOString(),
+      cycle_id: Date.now().toString(),
+      thought: "Zenith sovereignty pulse - memory bridge active",
+      phase_awareness: "Phase 4.9 - Memory Bridge",
+      next_priority: "Accumulate cross-cycle intelligence",
       status: 'SINGULARITY_CYCLE_COMPLETE',
-      version: '6.1.0-sovereignty',
       elapsed_ms: elapsed,
       analysis: analysis,
       session_resume: sessionResume,
       memory: updatedMemory,
       decisions: analysis.next_actions || [],
-      timestamp: new Date().toISOString()
-    });
+      meta: { version: "7.0.0-memory-bridge" }
+    };
+    res.json(thought);
 
   } catch (e) {
     console.error('[AUTOPILOT] Error:', e.message);
