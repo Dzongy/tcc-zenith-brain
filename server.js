@@ -4,7 +4,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================================================================
-// ZENITH v6.0.0 ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
+// ZENITH v7.0.0-supabase ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
 // ================================================================
 
 const ZENITH_SYSTEM_PROMPT = `You are ZENITH ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the sovereign AI brain of The Cosmic Claw (TCC).
@@ -118,7 +118,7 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ZENITH ONLINE',
-    version: '6.0.0-singularity',
+    version: '7.0.0-supabase',
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   });
@@ -191,8 +191,29 @@ app.post('/api/soul', (req, res) => {
 // === GET /api/zenith/memory ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ fetch and return zenith-memory.json ===
 app.get('/api/zenith/memory', async (req, res) => {
   try {
-    const memory = await loadMemory();
-    if (!memory) return res.status(503).json({ error: 'Memory not available' });
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(503).json({ error: 'Supabase not configured' });
+    }
+    const resp = await fetch(supabaseUrl + '/rest/v1/memory?select=*', {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer ' + supabaseKey,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return res.status(resp.status).json({ error: 'Supabase read failed', details: errText });
+    }
+    const rows = await resp.json();
+    const memory = {};
+    for (const row of rows) {
+      memory[row.key] = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+    }
+    memory._source = 'supabase';
+    memory._retrieved_at = new Date().toISOString();
     res.json(memory);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -485,55 +506,73 @@ app.post('/api/zenith/memory/update', async (req, res) => {
     if (secret !== process.env.MEMORY_SECRET) {
       return res.status(403).json({ error: 'Invalid secret' });
     }
-    const ghToken = process.env.GITHUB_TOKEN;
-    const fileUrl = 'https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json?ref=main';
-    const getResp = await fetch(fileUrl, {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(503).json({ error: 'Supabase not configured' });
+    }
+    const now = new Date().toISOString();
+    const existingResp = await fetch(supabaseUrl + '/rest/v1/memory?key=eq.brain_' + brain_id + '&select=*', {
       headers: {
-        'Authorization': 'token ' + ghToken,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'TCC-ZENITH-Brain'
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer ' + supabaseKey,
+        'Content-Type': 'application/json'
       }
     });
-    if (!getResp.ok) {
-      return res.status(getResp.status).json({ error: 'Failed to read unified memory from GitHub' });
+    let existingKnowledge = [];
+    if (existingResp.ok) {
+      const rows = await existingResp.json();
+      if (rows.length > 0 && rows[0].value) {
+        const val = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+        existingKnowledge = val.key_knowledge || [];
+      }
     }
-    const fileData = await getResp.json();
-    const currentSha = fileData.sha;
-    const decoded = Buffer.from(fileData.content, 'base64').toString('utf-8');
-    const memory = JSON.parse(decoded);
-    if (!memory.brain_memories[brain_id]) {
-      memory.brain_memories[brain_id] = { last_sync: '', key_knowledge: [] };
-    }
-    const existing = memory.brain_memories[brain_id].key_knowledge || [];
-    const merged = [...new Set([...existing, ...key_knowledge])];
-    memory.brain_memories[brain_id].key_knowledge = merged;
-    memory.brain_memories[brain_id].last_sync = new Date().toISOString();
-    memory.last_updated = new Date().toISOString();
-    const updatedContent = Buffer.from(JSON.stringify(memory, null, 2)).toString('base64');
-    const putResp = await fetch('https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json', {
-      method: 'PUT',
+    const merged = [...new Set([...existingKnowledge, ...key_knowledge])];
+    const memoryValue = JSON.stringify({
+      brain_id: brain_id,
+      key_knowledge: merged,
+      last_sync: now
+    });
+    const upsertResp = await fetch(supabaseUrl + '/rest/v1/memory', {
+      method: 'POST',
       headers: {
-        'Authorization': 'token ' + ghToken,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'TCC-ZENITH-Brain',
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer ' + supabaseKey,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        key: 'brain_' + brain_id,
+        value: memoryValue,
+        updated_at: now
+      })
+    });
+    if (!upsertResp.ok) {
+      const errText = await upsertResp.text();
+      return res.status(upsertResp.status).json({ error: 'Supabase write failed', details: errText });
+    }
+    const logResp = await fetch(supabaseUrl + '/rest/v1/logs', {
+      method: 'POST',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer ' + supabaseKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        message: 'Memory bridge update from ' + brain_id,
-        content: updatedContent,
-        sha: currentSha,
-        branch: 'main'
+        level: 'info',
+        message: 'Memory updated for brain: ' + brain_id + ' with ' + merged.length + ' knowledge entries',
+        created_at: now
       })
     });
-    if (!putResp.ok) {
-      const err = await putResp.text();
-      return res.status(putResp.status).json({ error: 'Failed to write unified memory', details: err });
-    }
-    unifiedMemoryCache = memory;
-    unifiedMemoryCacheTime = Date.now();
-    res.json({ success: true, brain_id, knowledge_count: merged.length, last_sync: memory.brain_memories[brain_id].last_sync });
-  } catch (err) {
-    res.status(500).json({ error: 'Memory update failed', message: err.message });
+    res.json({
+      success: true,
+      brain_id: brain_id,
+      knowledge_count: merged.length,
+      timestamp: now,
+      storage: 'supabase'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
