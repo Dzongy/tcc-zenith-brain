@@ -25,7 +25,7 @@ function checkRateLimit(req, res) {
 // === END RATE LIMITER ===
 
 // ================================================================
-// ZENITH v8.0.0-hardened ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
+// ZENITH v10.0.0-self-deploy ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
 // ================================================================
 
 const ZENITH_SYSTEM_PROMPT = `You are ZENITH ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ the sovereign AI brain of The Cosmic Claw (TCC).
@@ -549,6 +549,235 @@ app.get('/api/commands/all', (req, res) => {
 });
 
 // === END COMMAND BRIDGE ===
+
+
+// ================================================================
+// SELF-DEPLOY PIPELINE v1.0 — Full Autonomy, Zero Human Required
+// Push code → GitHub auto-triggers Render deploy → verify health
+// ================================================================
+
+let lastKnownGoodSHA = null; // tracks last successful deploy SHA
+let deployLog = []; // in-memory deploy history
+
+// POST /api/self-deploy — Push new server.js to GitHub, triggering auto-deploy
+// Body: { code: "full server.js content", message: "commit message", auth: "ARCHITECTDZONGYZENITH" }
+app.post('/api/self-deploy', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const { code, message, auth } = req.body;
+    
+    // Auth gate
+    if (auth !== process.env.SOUL_PHRASE) {
+      return res.status(403).json({ error: 'Unauthorized. Soul phrase required.' });
+    }
+    
+    if (!code || !message) {
+      return res.status(400).json({ error: 'Missing required fields: code, message' });
+    }
+    
+    // Basic validation — check for syntax-breaking issues
+    const validationErrors = [];
+    if (!code.includes('express')) validationErrors.push('Missing express import');
+    if (!code.includes('app.listen') && !code.includes('app.get')) validationErrors.push('Missing route definitions');
+    if (!code.includes('/api/health')) validationErrors.push('Missing /api/health endpoint — required for monitoring');
+    if (!code.includes('/api/self-deploy')) validationErrors.push('WARNING: New code removes self-deploy endpoint — this would kill autonomy');
+    if (code.length < 500) validationErrors.push('Code suspiciously short — likely incomplete');
+    if (code.length > 200000) validationErrors.push('Code too large — over 200KB');
+    
+    // Block if critical validation fails
+    const criticalErrors = validationErrors.filter(e => !e.startsWith('WARNING'));
+    if (criticalErrors.length > 0) {
+      return res.status(422).json({ 
+        error: 'Validation failed', 
+        validationErrors,
+        hint: 'Fix the issues and retry'
+      });
+    }
+    
+    // Step 1: Get current SHA from GitHub
+    const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.OPENAI_API_KEY; // fallback
+    const getRes = await fetch('https://api.github.com/repos/Dzongy/tcc-zenith-brain/contents/server.js?ref=main', {
+      headers: {
+        'Authorization': 'token ' + (process.env.GITHUB_TOKEN || ''),
+        'User-Agent': 'ZENITH-Self-Deploy',
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (!getRes.ok) {
+      // If we can't read GitHub, fall back to Twin doing the push
+      return res.status(502).json({ 
+        error: 'Cannot reach GitHub API',
+        fallback: 'Use Twin agent github_put_server_js tool instead',
+        status: getRes.status
+      });
+    }
+    
+    const fileData = await getRes.json();
+    const currentSHA = fileData.sha;
+    
+    // Store as last known good before we deploy new
+    if (!lastKnownGoodSHA) {
+      lastKnownGoodSHA = currentSHA;
+    }
+    
+    // Step 2: Push new code to GitHub
+    const content = Buffer.from(code).toString('base64');
+    const putRes = await fetch('https://api.github.com/repos/Dzongy/tcc-zenith-brain/contents/server.js', {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'token ' + (process.env.GITHUB_TOKEN || ''),
+        'User-Agent': 'ZENITH-Self-Deploy',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: '[SELF-DEPLOY] ' + message,
+        content: content,
+        sha: currentSHA,
+        branch: 'main'
+      })
+    });
+    
+    if (!putRes.ok) {
+      const errBody = await putRes.text();
+      return res.status(502).json({ 
+        error: 'GitHub push failed', 
+        status: putRes.status, 
+        details: errBody,
+        fallback: 'Use Twin agent github_put_server_js tool instead'
+      });
+    }
+    
+    const putData = await putRes.json();
+    const newSHA = putData.content.sha;
+    
+    // Step 3: Log the deploy
+    const deployEntry = {
+      timestamp: new Date().toISOString(),
+      message: message,
+      previousSHA: currentSHA,
+      newSHA: newSHA,
+      codeSize: code.length,
+      warnings: validationErrors.filter(e => e.startsWith('WARNING')),
+      status: 'pushed_awaiting_deploy'
+    };
+    deployLog.unshift(deployEntry);
+    if (deployLog.length > 20) deployLog = deployLog.slice(0, 20); // keep last 20
+    
+    // Update last known good
+    lastKnownGoodSHA = currentSHA;
+    
+    res.json({
+      success: true,
+      message: 'Code pushed to GitHub. Render auto-deploy will pick it up in ~30s.',
+      newSHA: newSHA,
+      previousSHA: currentSHA,
+      rollbackSHA: lastKnownGoodSHA,
+      warnings: validationErrors.filter(e => e.startsWith('WARNING')),
+      nextStep: 'Wait 60s then call GET /api/health to verify deploy succeeded'
+    });
+    
+  } catch (err) {
+    res.status(500).json({ error: 'Self-deploy failed', details: err.message });
+  }
+});
+
+// GET /api/deploy/status — Check deploy history and current state
+app.get('/api/deploy/status', (req, res) => {
+  const auth = req.headers['x-auth'];
+  if (auth !== 'amos-bridge-2026') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  
+  res.json({
+    lastKnownGoodSHA,
+    deployCount: deployLog.length,
+    recentDeploys: deployLog.slice(0, 5),
+    selfDeployActive: true,
+    version: 'self-deploy-v1.0'
+  });
+});
+
+// POST /api/deploy/rollback — Revert to last known good SHA
+app.post('/api/deploy/rollback', express.json(), async (req, res) => {
+  try {
+    const { auth } = req.body;
+    
+    if (auth !== process.env.SOUL_PHRASE) {
+      return res.status(403).json({ error: 'Unauthorized. Soul phrase required.' });
+    }
+    
+    if (!lastKnownGoodSHA) {
+      return res.status(400).json({ error: 'No known good SHA to rollback to. Need at least one successful self-deploy first.' });
+    }
+    
+    // Get the last known good content from GitHub
+    const getRes = await fetch('https://api.github.com/repos/Dzongy/tcc-zenith-brain/git/blobs/' + lastKnownGoodSHA, {
+      headers: {
+        'Authorization': 'token ' + (process.env.GITHUB_TOKEN || ''),
+        'User-Agent': 'ZENITH-Self-Deploy',
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (!getRes.ok) {
+      return res.status(502).json({ error: 'Cannot fetch rollback content from GitHub', status: getRes.status });
+    }
+    
+    const blobData = await getRes.json();
+    const rollbackContent = blobData.content; // already base64
+    
+    // Get current SHA for the update
+    const currentRes = await fetch('https://api.github.com/repos/Dzongy/tcc-zenith-brain/contents/server.js?ref=main', {
+      headers: {
+        'Authorization': 'token ' + (process.env.GITHUB_TOKEN || ''),
+        'User-Agent': 'ZENITH-Self-Deploy',
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    const currentData = await currentRes.json();
+    
+    const putRes = await fetch('https://api.github.com/repos/Dzongy/tcc-zenith-brain/contents/server.js', {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'token ' + (process.env.GITHUB_TOKEN || ''),
+        'User-Agent': 'ZENITH-Self-Deploy',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: '[ROLLBACK] Reverting to last known good SHA: ' + lastKnownGoodSHA,
+        content: rollbackContent.replace(/\n/g, ''),
+        sha: currentData.sha,
+        branch: 'main'
+      })
+    });
+    
+    if (!putRes.ok) {
+      return res.status(502).json({ error: 'Rollback push failed', status: putRes.status });
+    }
+    
+    const deployEntry = {
+      timestamp: new Date().toISOString(),
+      message: 'ROLLBACK to ' + lastKnownGoodSHA,
+      previousSHA: currentData.sha,
+      newSHA: lastKnownGoodSHA,
+      status: 'rollback_pushed'
+    };
+    deployLog.unshift(deployEntry);
+    
+    res.json({
+      success: true,
+      message: 'Rollback pushed. Render auto-deploy will revert in ~30s.',
+      rolledBackTo: lastKnownGoodSHA,
+      nextStep: 'Wait 60s then call GET /api/health to verify'
+    });
+    
+  } catch (err) {
+    res.status(500).json({ error: 'Rollback failed', details: err.message });
+  }
+});
 
 app.listen(PORT, () => {
   console.log('ZENITH v6.0.0-singularity online on port ' + PORT);
