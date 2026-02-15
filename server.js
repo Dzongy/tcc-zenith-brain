@@ -435,6 +435,108 @@ app.post('/api/chat', express.json(), async (req, res) => {
   }
 });
 
+
+// ================================================================
+// PHASE 5.0 — UNIFIED MEMORY BRIDGE ENDPOINTS
+// ================================================================
+
+// In-memory cache for unified memory
+let unifiedMemoryCache = null;
+let unifiedMemoryCacheTime = 0;
+const UNIFIED_CACHE_TTL = 30000; // 30 seconds
+
+// GET /api/zenith/memory — Fetch unified memory from GitHub
+app.get('/api/zenith/memory', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (unifiedMemoryCache && (now - unifiedMemoryCacheTime) < UNIFIED_CACHE_TTL) {
+      return res.json(unifiedMemoryCache);
+    }
+    const ghToken = process.env.GITHUB_TOKEN;
+    const url = 'https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json?ref=main';
+    const resp = await fetch(url, {
+      headers: {
+        'Authorization': 'token ' + ghToken,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TCC-ZENITH-Brain'
+      }
+    });
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: 'Failed to fetch unified memory', status: resp.status });
+    }
+    const data = await resp.json();
+    const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
+    const memory = JSON.parse(decoded);
+    unifiedMemoryCache = memory;
+    unifiedMemoryCacheTime = now;
+    res.json(memory);
+  } catch (err) {
+    res.status(500).json({ error: 'Unified memory fetch failed', message: err.message });
+  }
+});
+
+// POST /api/zenith/memory/update — Update a brain's knowledge in unified memory
+app.post('/api/zenith/memory/update', async (req, res) => {
+  try {
+    const { brain_id, key_knowledge, secret } = req.body;
+    if (!brain_id || !key_knowledge || !secret) {
+      return res.status(400).json({ error: 'Missing required fields: brain_id, key_knowledge, secret' });
+    }
+    if (secret !== process.env.MEMORY_SECRET) {
+      return res.status(403).json({ error: 'Invalid secret' });
+    }
+    const ghToken = process.env.GITHUB_TOKEN;
+    const fileUrl = 'https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json?ref=main';
+    const getResp = await fetch(fileUrl, {
+      headers: {
+        'Authorization': 'token ' + ghToken,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TCC-ZENITH-Brain'
+      }
+    });
+    if (!getResp.ok) {
+      return res.status(getResp.status).json({ error: 'Failed to read unified memory from GitHub' });
+    }
+    const fileData = await getResp.json();
+    const currentSha = fileData.sha;
+    const decoded = Buffer.from(fileData.content, 'base64').toString('utf-8');
+    const memory = JSON.parse(decoded);
+    if (!memory.brain_memories[brain_id]) {
+      memory.brain_memories[brain_id] = { last_sync: '', key_knowledge: [] };
+    }
+    const existing = memory.brain_memories[brain_id].key_knowledge || [];
+    const merged = [...new Set([...existing, ...key_knowledge])];
+    memory.brain_memories[brain_id].key_knowledge = merged;
+    memory.brain_memories[brain_id].last_sync = new Date().toISOString();
+    memory.last_updated = new Date().toISOString();
+    const updatedContent = Buffer.from(JSON.stringify(memory, null, 2)).toString('base64');
+    const putResp = await fetch('https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json', {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'token ' + ghToken,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TCC-ZENITH-Brain',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: 'Memory bridge update from ' + brain_id,
+        content: updatedContent,
+        sha: currentSha,
+        branch: 'main'
+      })
+    });
+    if (!putResp.ok) {
+      const err = await putResp.text();
+      return res.status(putResp.status).json({ error: 'Failed to write unified memory', details: err });
+    }
+    unifiedMemoryCache = memory;
+    unifiedMemoryCacheTime = Date.now();
+    res.json({ success: true, brain_id, knowledge_count: merged.length, last_sync: memory.brain_memories[brain_id].last_sync });
+  } catch (err) {
+    res.status(500).json({ error: 'Memory update failed', message: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log('ZENITH v6.0.0-singularity online on port ' + PORT);
 });
