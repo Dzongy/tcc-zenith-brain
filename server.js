@@ -367,6 +367,23 @@ Format as a single block of text that can be pasted as-is into a new AI chat.`;
 });
 
 // === Global Error Handler ===
+
+// === TRANSPARENT GROQ PROXY (for GitHub Actions thinking loop) ===
+app.post('/api/groq-proxy', async (req, res) => {
+  try {
+    const groqKey = process.env.GROK_API_KEY || process.env.GROQ_API_KEY;
+    if (!groqKey) return res.status(500).json({error:'No Groq key configured'});
+    const body = JSON.stringify(req.body);
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},
+      body: body
+    });
+    const data = await resp.text();
+    res.status(resp.status).type('application/json').send(data);
+  } catch(e) { res.status(502).json({error:e.message}); }
+});
+
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
   res.status(500).json({ error: 'Internal server error' });
