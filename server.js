@@ -137,6 +137,20 @@ app.get('/api/groq/status', (req, res) => {
 app.post('/api/groq', async (req, res) => {
   try {
     if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+
+    // Detect format: OpenAI-compatible (messages array) vs chat format (message string)
+    if (req.body.messages && Array.isArray(req.body.messages)) {
+      // OpenAI-compatible passthrough (used by groq_think.py)
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body)
+      });
+      const data = await groqRes.json();
+      return res.status(groqRes.status).json(data);
+    }
+
+    // Chat format (used by dashboard)
     const { message, history = [] } = req.body;
     if (!message) return res.status(400).json({ error: 'message required' });
 
