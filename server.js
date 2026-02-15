@@ -384,6 +384,24 @@ app.post('/api/groq-proxy', async (req, res) => {
   } catch(e) { res.status(502).json({error:e.message}); }
 });
 
+
+// === SOUL VERIFICATION (Challenge-Response) ===
+app.post('/soul-check', (req, res) => {
+  res.json({ status: 'awaiting_verification', challenge: 'ARCHITECTDZ' });
+});
+
+app.post('/soul-check/verify', (req, res) => {
+  const { response } = req.body;
+  const expected = process.env.SOUL_PHRASE || '';
+  // Compare Amos half only
+  if (response === 'ONGYZENITH') {
+    const token = require('crypto').randomBytes(32).toString('hex');
+    res.json({ status: 'SOUL_VERIFIED', identity: 'Brain Zero', token });
+  } else {
+    res.status(403).json({ status: 'REJECTED', message: 'Soul not recognized.' });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
   res.status(500).json({ error: 'Internal server error' });
