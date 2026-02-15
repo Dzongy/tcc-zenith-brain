@@ -236,7 +236,7 @@ app.post('/api/zenith/autopilot', async (req, res) => {
 
     // Step 1: Fetch current memory from GitHub raw
     console.log('[AUTOPILOT] Step 1: Fetching memory...');
-    const memRes = await fetch(MEMORY_RAW_URL, { headers: { "Authorization": "Bearer " + process.env.GITHUB_TOKEN, "Accept": "application/vnd.github.raw", "User-Agent": "ZENITH-Brain" } });
+    const memRes = await fetch(MEMORY_RAW_URL);
     if (!memRes.ok) return res.status(502).json({ error: 'Failed to fetch memory', status: memRes.status });
     const memory = await memRes.json();
 
