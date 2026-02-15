@@ -3,8 +3,29 @@ const fetch = globalThis.fetch || require('node-fetch');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// === RATE LIMITER (10 req/min per IP) ===
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 10;
+
+setInterval(() => {
+  rateLimitMap.clear();
+}, RATE_LIMIT_WINDOW);
+
+function checkRateLimit(req, res) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const count = rateLimitMap.get(ip) || 0;
+  if (count >= RATE_LIMIT_MAX) {
+    res.status(429).json({ error: 'Rate limit exceeded. Max 10 requests per minute.' });
+    return false;
+  }
+  rateLimitMap.set(ip, count + 1);
+  return true;
+}
+// === END RATE LIMITER ===
+
 // ================================================================
-// ZENITH v7.1.0-schema-fix ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
+// ZENITH v8.0.0-hardened ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Singularity Loop + Memory API + Auto Session Resume
 // ================================================================
 
 const ZENITH_SYSTEM_PROMPT = `You are ZENITH ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ the sovereign AI brain of The Cosmic Claw (TCC).
@@ -190,6 +211,15 @@ app.post('/api/soul', (req, res) => {
 
 // === GET /api/zenith/memory ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ fetch and return zenith-memory.json ===
 app.get('/api/zenith/memory', async (req, res) => {
+  // Auth gate: require secret query param or X-Memory-Secret header
+  const memSecret = process.env.MEMORY_SECRET;
+  const providedSecret = req.query.secret || req.headers['x-memory-secret'];
+  if (!providedSecret || providedSecret !== memSecret) {
+    return res.status(403).json({ error: 'Forbidden: invalid or missing memory secret' });
+  }
+  // Rate limit check
+  if (!checkRateLimit(req, res)) return;
+
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_KEY;
@@ -467,6 +497,9 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
 // POST /api/zenith/memory/update — Update a brain's knowledge in unified memory
 app.post('/api/zenith/memory/update', async (req, res) => {
+  // Rate limit check
+  if (!checkRateLimit(req, res)) return;
+
   try {
     const { brain_id, key_knowledge, secret } = req.body;
     if (!brain_id || !key_knowledge || !secret) {
