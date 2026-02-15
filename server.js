@@ -462,39 +462,8 @@ app.post('/api/chat', express.json(), async (req, res) => {
 // ================================================================
 
 // In-memory cache for unified memory
-let unifiedMemoryCache = null;
-let unifiedMemoryCacheTime = 0;
-const UNIFIED_CACHE_TTL = 30000; // 30 seconds
-
-// GET /api/zenith/memory — Fetch unified memory from GitHub
-app.get('/api/zenith/memory', async (req, res) => {
-  try {
-    const now = Date.now();
-    if (unifiedMemoryCache && (now - unifiedMemoryCacheTime) < UNIFIED_CACHE_TTL) {
-      return res.json(unifiedMemoryCache);
-    }
-    const ghToken = process.env.GITHUB_TOKEN;
-    const url = 'https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-unified-memory.json?ref=main';
-    const resp = await fetch(url, {
-      headers: {
-        'Authorization': 'token ' + ghToken,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'TCC-ZENITH-Brain'
-      }
-    });
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: 'Failed to fetch unified memory', status: resp.status });
-    }
-    const data = await resp.json();
-    const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
-    const memory = JSON.parse(decoded);
-    unifiedMemoryCache = memory;
-    unifiedMemoryCacheTime = now;
-    res.json(memory);
-  } catch (err) {
-    res.status(500).json({ error: 'Unified memory fetch failed', message: err.message });
-  }
-});
+// [REMOVED] Legacy GitHub-based GET /api/zenith/memory handler
+// Supabase-based handler registered earlier takes precedence now
 
 // POST /api/zenith/memory/update — Update a brain's knowledge in unified memory
 app.post('/api/zenith/memory/update', async (req, res) => {
