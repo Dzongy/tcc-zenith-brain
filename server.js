@@ -46,7 +46,13 @@ async function loadMemory() {
   const now = Date.now();
   if (memoryCache && (now - memoryCacheTime) < MEMORY_CACHE_TTL) return memoryCache;
   try {
-    const res = await fetch(MEMORY_RAW_URL);
+    const res = await fetch('https://api.github.com/repos/Dzongy/tcc-sovereignty-lite/contents/zenith-memory.json', {
+      headers: {
+        'Authorization': 'Bearer ' + process.env.GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.raw',
+        'User-Agent': 'ZENITH-Brain'
+      }
+    });
     if (res.ok) {
       memoryCache = await res.json();
       memoryCacheTime = now;
