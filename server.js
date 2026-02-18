@@ -358,6 +358,37 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+
+// === BRAIN PROXY (CORS relay for browser-blocked APIs) ===
+// Accepts target URL and headers from client, forwards server-side, returns with CORS
+// API keys are sent FROM the client (stored in browser localStorage) — server doesn't store them
+app.post('/api/brain-proxy', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const { target_url, target_headers, target_body } = req.body;
+    if (!target_url) return res.status(400).json({ error: 'target_url required' });
+
+    // Allowlist: only proxy to known AI API domains
+    const allowed = ['api.anthropic.com', 'api.cohere.com', 'api.mistral.ai', 'api.deepseek.com',
+                     'api.groq.com', 'api.x.ai', 'api.openai.com', 'generativelanguage.googleapis.com'];
+    const urlObj = new URL(target_url);
+    if (!allowed.includes(urlObj.hostname)) {
+      return res.status(403).json({ error: 'Domain not in allowlist: ' + urlObj.hostname });
+    }
+
+    const proxyRes = await fetch(target_url, {
+      method: 'POST',
+      headers: target_headers || { 'Content-Type': 'application/json' },
+      body: typeof target_body === 'string' ? target_body : JSON.stringify(target_body)
+    });
+
+    const data = await proxyRes.text();
+    res.status(proxyRes.status).set('Content-Type', proxyRes.headers.get('content-type') || 'application/json').send(data);
+  } catch (err) {
+    console.error('/api/brain-proxy error:', err.message);
+    res.status(500).json({ error: 'Proxy failed', details: err.message });
+  }
+});
+
 // === Start ===
 
 // ================================================================
